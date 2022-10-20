@@ -1,9 +1,18 @@
 from flask import Flask, url_for, render_template, request, redirect
 from flask_sqlalchemy import SQLAlchemy
+from flask_session.__init__ import Session
 from datetime import datetime
 
 
 app = Flask(__name__)
+
+# Ensure templates are auto-reloaded
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+
+# Configure session to use filesystem (instead of signed cookies)
+app.config["SESSION_PERMANENT"] = False
+app.config["SESSION_TYPE"] = "filesystem"
+Session(app)
 
 #Initalize the database
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db' # three '/' is relative path, 4 would be aboslute
