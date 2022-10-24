@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Register
+{% endblock %}
+
+{% block body %}
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css" rel="stylesheet" id="bootstrap-css">
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//code.jquery.com/jquery-1.11.1.min.js"></script>
+<!------ Include the above in your HEAD tag ---------->
+
+<div class="container">
+    <div class="row col-md-6 col-md-offset-2 custyle">
+    <table class="table table-striped custab">
+    <thead>
+    <a href="#" class="btn btn-primary btn-xs pull-right"><b>+</b> Add new categories</a>
+        <tr>
+            <th>ID</th>
+            <th>Group Name</th>
+            <th class="text-center">Actions</th>
+        </tr>
+    </thead>
+            {% for group in groups %}
+            <tr>
+            <td>{{ group.getId() }}</td>
+            <td>{{ group.getName() }}</td>
+            <td class="text-center"><a class='btn btn-info btn-xs' href="/down_templ/{{ group.getId()}}"><span class="glyphicon glyphicon-download"></span> Download template </a>
+            </tr>
+
+            
+            {% endfor %}
+    </table>
+    </div>
+</div>
+{% endblock %}

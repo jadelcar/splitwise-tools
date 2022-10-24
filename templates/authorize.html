@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Authorize Splitwise
+{% endblock %}
+
+{% block body %}
+    <form action="/login_sw" method="post">
+        <button class="btn btn-primary" type="submit">Authorize Splitwise</button>
+    </form>
+{% endblock %}

@@ -7,7 +7,12 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from helpers import apology, login_required, lookup, usd, update_portfolios
 
+from splitwise import Splitwise
+import config as Config
+
+#Create app and Splitwise secret key
 app = Flask(__name__)
+app.secret_key = "test_secret_key"
 
 # Ensure templates are auto-reloaded
 app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -37,6 +42,10 @@ In particular, a 'todo' will have the following characteristics: (id, content, c
 
 Other fields will have a default (such as completed or date_created) or have a primary key (does it self-increment?)
 
+To modify the database, use sqlite3 in the terminal:
+sqlite3 instance/database.db
+# Add a column:
+ALTER TABLE user ADD COLUMN split_access_token type text;
 
 """
 class Todo(db.Model):
@@ -58,75 +67,46 @@ class User(db.Model):
     date_created = db.Column(db.DateTime, default=datetime.utcnow)
     pass_hash = db.Column(db.String(200), nullable=False) 
     split_user_id = db.Column(db.String(40))
+    split_token = db.Column(db.String(200))
+    split_secret = db.Column(db.String(200))
+    split_oauth_token = db.Column(db.String(200))
+    split_oauth_verifier = db.Column(db.String(200))
     
     #Function that returns the ID every time we create a new element
     def __repr__(self):
         return '<You were assigned ID %r>' % self.id
 
 
+# @app.after_request
+# def after_request(response):
+#     """Ensure responses aren't cached"""
+#     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+#     response.headers["Expires"] = 0
+#     response.headers["Pragma"] = "no-cache"
+#     return response
 
-@app.after_request
-def after_request(response):
-    """Ensure responses aren't cached"""
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Expires"] = 0
-    response.headers["Pragma"] = "no-cache"
-    return response
+@app.route("/")
+def home():
+    return render_template("home.html")
 
-
-@app.route('/', methods=['GET','POST'])
-def index():
+@app.route('/groups', methods=['GET','POST'])
+def groups():
+    """Show a list of groups"""
     if request.method == 'POST':
-        task_content = request.form['content'] #Get from the form the object named 'content'
-        new_task = Todo(content=task_content)
-        
-        try:
-            db.session.add(new_task)
-            db.session.commit()
-            return redirect("/")
-        except:
-            return 'There was an issue adding your task'
+        pass
     #If method is 'GET'
     else:
-        # Obtain the list of tasks
-        # Within the class 'Todo', make a query, ordered by 'date_created' (one of the columns of the table) and extract all. Other options would be to extract the first record (first())
-        tasks = Todo.query.order_by(Todo.date_created).all() 
-        return render_template('index.html', tasks=tasks)
+        # Fetch groups
+        if 'access_token' not in session:
+            return redirect(url_for("home"))
+        sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
+        sObj.setAccessToken(session['access_token'])
 
-"""
-Route for deleting a task. When we call this route, we need to indicate the id of the task we want to delete
-eg: "/delete/145"
-the ID will be passed on to the function as an argument
-"""
-@app.route('/delete/<int:id>')
-def delete(id):
-    task_to_delete = Todo.query.get_or_404(id) #It will make a query to get the task using the 'id' and if it fails it will throw a 404 error
-
-    try:
-        db.session.delete(task_to_delete)
-        db.session.commit()
-        return redirect('/')
-    except:
-        return 'There was a problem deleting that task'
-
-@app.route('/update/<int:id>', methods=['GET', 'POST'])
-def update(id):
-    task = Todo.query.get_or_404(id)
-
-    if request.method == 'POST':
-        task.content = request.form['content'] #Set the content of the current task to the content submitted in the form via a POST request
-
-        try:
-            db.session.commit() # Simply commit this session, where we have update the content of the task
-            return redirect('/')
-        except:
-            return 'There was an issue updating your task'
-
-    else:
-        return render_template('update.html', task=task)
+        groups = sObj.getGroups()
+    return render_template('groups.html', groups=groups)
 
 
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/login_app", methods=["GET", "POST"])
 def login():
     """Log user in"""
 
@@ -145,7 +125,10 @@ def login():
             return apology("must provide password", 403)
 
         # Query database for username
-        rows = User.query.filter_by(username=request.form.get("username")).__dict__
+        #Docs: https://docs.sqlalchemy.org/en/14/core/connections.html#sqlalchemy.engine.RowMapping
+        users_query = User.query.filter_by(username=request.form.get("username"))
+        
+        rows = [u.__dict__ for u in users_query]
         # rows = db.execute("SELECT * FROM users WHERE username = ?", request.form.get("username"))
 
         # Ensure username exists and password is correct
@@ -155,12 +138,72 @@ def login():
         # Remember which user has logged in
         session["user_id"] = rows[0]["id"]
 
-        # Redirect user to home page
+        # Try to load access_token (only if user has authorized Splitwise before)
+        try:
+            sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
+            url, secret = sObj.getAuthorizeURL()
+            access_token = sObj.getAccessToken(rows[0]["split_oauth_token"], secret,rows[0]["split_oauth_verifier"])
+            session['access_token'] = access_token
+        except:
+            return redirect("/")     
         return redirect("/")
+
+        
 
     # User reached route via GET (as by clicking a link or via redirect)
     else:
         return render_template("login.html")
+
+"""
+Splitwise login: Uses two routes. /login_sw redirects the user to SW's URL for authorization using 'getAuthorizeURL()'. Then, SW will redirect to the URL defined in app's settings, which in this case is "/authorize".
+
+In /authorize the user's access token is stored in the session for later use
+"""
+
+@app.route("/login_sw")
+def login_sw():
+    sObj = Splitwise(Config.consumer_key,Config.consumer_secret) #Special object for authentication in Splitwise
+    url, secret = sObj.getAuthorizeURL() # Method in sObj 'getAuthorizeURL()' returns the URL for authorizing the app
+    
+    session['secret'] = secret 
+
+    # Store secret in DB
+    current_user = User.query.get_or_404(session["user_id"])
+    current_user.split_secret = secret
+    try:
+        db.session.commit()
+    except:
+        return 'There was an issue updating your user access token'
+    return redirect(url) #Redirect user to SW authorization website. After login, redirects user to the URL defined in the app's settings
+
+@app.route("/authorize")
+def authorize():
+    if 'secret' not in session:
+        return redirect(url_for("home"))
+
+    # Get token and verifier from Splitwise's POST request
+    oauth_token    = request.args.get('oauth_token')
+    oauth_verifier = request.args.get('oauth_verifier')
+
+    # Store these in DB
+    current_user = User.query.get_or_404(session["user_id"])
+    current_user.split_oauth_token = oauth_token
+    current_user.split_oauth_verifier = oauth_verifier
+    try:
+        db.session.commit()
+    except:
+        return 'There was an issue updating your user access token'
+
+    # Get parameters needed to obtain the access token
+    sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
+    
+    current_user = User.query.filter_by(id=session["user_id"])
+    rows = [u.__dict__ for u in current_user]
+    user_secret = rows[0]['split_secret']
+    
+    access_token = sObj.getAccessToken(oauth_token, user_secret,oauth_verifier)
+    session['access_token'] = access_token
+    return render_template("authorize_success.html") # 'url_for' generates a url given the input (in this case, an html file).
 
 
 @app.route("/logout")
@@ -176,7 +219,7 @@ def logout():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     """Register user"""
-    #If they reach via "GET" we redirect to the page for registering
+    # If they reach via "GET" we redirect to the page for registering
     if request.method == "GET":
         return render_template("register.html")
 
@@ -205,12 +248,8 @@ def register():
             db.session.commit()
         except:
             return apology("Could not insert you in the database")
-        # Redirect to index (showing a summary of stocks owned and cash)
-    return render_template("base.html")
-
-
-
+        # Redirect to home (showing a summary of stocks owned and cash)
+    return render_template("home.html")
 
 if __name__ == "__main__":
     app.run(debug=True)
-
