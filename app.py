@@ -1,25 +1,28 @@
-from flask import Flask, url_for, render_template, request, redirect, session
+from flask import Flask, url_for, render_template, request, redirect, session, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_session.__init__ import Session
 from datetime import datetime
 from tempfile import mkdtemp
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from helpers import apology, login_required, lookup, usd, update_portfolios
+from helpers import *
 
 from splitwise import Splitwise
 import config as Config
+
+import pandas as pd
 
 #Create app and Splitwise secret key
 app = Flask(__name__)
 app.secret_key = "test_secret_key"
 
 # Ensure templates are auto-reloaded
-app.config["TEMPLATES_AUTO_RELOAD"] = True
-
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.config['FLASK_ENV'] = 'development'
 # Configure session to use filesystem (instead of signed cookies)
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
+
 
 Session(app)
 
@@ -99,12 +102,89 @@ def groups():
         # Fetch groups
         if 'access_token' not in session:
             return redirect(url_for("home"))
-        sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
-        sObj.setAccessToken(session['access_token'])
-
+        # sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
+        # sObj.setAccessToken(session['access_token'])
+        sObj = get_access_token() # Helper function
         groups = sObj.getGroups()
     return render_template('groups.html', groups=groups)
 
+@app.route('/batch_upload', methods=['GET','POST'])
+def batch_upload():
+    if request.method == 'GET':
+        sObj = get_access_token()
+        groups = sObj.getGroups()
+        return render_template('batch_upload.html', groups=groups)
+    else:
+        sObj = get_access_token()
+        
+        # Fetch group info
+        group_id = request.form.get("group_for_upload")
+        group = sObj.getGroup(group_id)
+        group_name = group.getName()
+        group_members = group.getMembers() # list of friend objects
+
+        # Process file submitted
+        file = request.files['batch_expenses_file'] # See https://flask.palletsprojects.com/en/2.2.x/quickstart/#file-uploads and https://flask.palletsprojects.com/en/2.2.x/api/#flask.Request.files
+        df = pd.read_excel(file)
+        # 
+        error_message = ""
+        error_total = 0
+        error_dict = {
+            "descr" : {
+                "error_list" : [] ,
+                "errors" : 0
+            } ,
+            "date" : {
+                "error_list" : [] ,
+                "errors" : 0          
+            }
+        }   
+
+        # Verify upload, looping over each column or column group and over types of error. If an error is detected, add to the error message, indicating the IDs of the expenses affected
+        def add_to_error_list(var_name, error_total=error_total):
+            error_total += 1
+            error_dict[var_name]['error_list'].append(str(id)) #
+            error_dict[var_name]['errors'] += 1
+            return error_total
+
+        # Description > 100
+        for id, descr in zip(df.id, df.description):
+            if len(descr) > 20: error_total = add_to_error_list("descr", error_total)
+            
+        if error_dict['descr']['error_list']: #If there's at least one error
+            error_message = add_to_error_message("Description is longer than 20  characters", error_dict['descr']['error_list'], error_message)
+        
+        error_message = add_to_error_message("Second error about dates", error_dict['date']['error_list'], error_message)
+                    
+        # Date cannot be parsed
+        # for date in df.date:
+        #     if is_date(date) == TRUE:
+        expenses = df.to_dict('records')
+        print(expenses)
+        if error_total == 0:
+            # Store the dict in session and redirect to editing site
+            session['expenses_upload'] = expenses
+            # Redirect to the website for editing (edit_upload.html), passing on the data on expenses for display
+            return render_template("upload_edit.html", file_valid = "yes", group_id = group_id, group_name = group_name, expenses = expenses)
+        else:
+            flash(error_message)
+            return render_template("upload_edit.html", file_valid = "no", group_id = group_id, group_name = group_name, expenses = expenses, error_dict= error_dict)
+
+# TBD: Depending on the process result
+    # If the process fails: Show errors
+    # If the process timeouts: Show apology
+    # If the process succeeds:
+
+@app.route('/push_expenses', methods=['POST'])
+def push_expenses():
+    #Another option: Parse the data received as JSON in the Splitwise format needed (https://flask.palletsprojects.com/en/2.2.x/api/#flask.Request.get_json), also see the property 'JSON'
+    
+    # Upload each expense to Splitwise
+    # for expense in session['batch_expenses']:
+
+    return render_template("upload_success_summary.html")
+
+    # If the process fails (except) make sure to remove the expenses from session
 
 @app.route("/login_app", methods=["GET", "POST"])
 def login():
@@ -137,6 +217,8 @@ def login():
 
         # Remember which user has logged in
         session["user_id"] = rows[0]["id"]
+        session["user_name"] = rows[0]["username"]
+        
 
         # Try to load access_token (only if user has authorized Splitwise before)
         try:
@@ -205,7 +287,6 @@ def authorize():
     session['access_token'] = access_token
     return render_template("authorize_success.html") # 'url_for' generates a url given the input (in this case, an html file).
 
-
 @app.route("/logout")
 def logout():
     """Log user out"""
@@ -248,8 +329,11 @@ def register():
             db.session.commit()
         except:
             return apology("Could not insert you in the database")
-        # Redirect to home (showing a summary of stocks owned and cash)
+    # Redirect to home (showing a summary of stocks owned and cash)
     return render_template("home.html")
 
-if __name__ == "__main__":
-    app.run(debug=True)
+# if __name__ == "__main__":
+#     app.run(debug=True)
+#     app.jinja_env.auto_reload = True
+#     app.config['TEMPLATES_AUTO_RELOAD'] = True
+#     app.run(debug=True, host='127.0.0.1:5000')

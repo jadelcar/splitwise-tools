@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Register
+{% endblock %}
+
+{% block body %}
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css" rel="stylesheet" id="bootstrap-css">
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//code.jquery.com/jquery-1.11.1.min.js"></script>
+<!------ Include the above in your HEAD tag ---------->
+
+<div class="container">
+    <div class="row col-md-6 col-md-offset-2 custyle">
+    The following expenses will be uploaded to {{ group_name }}[{{ group_id }}].
+    <table class="table table-striped custab">
+    <thead>
+    <a href="#" class="btn btn-primary btn-xs pull-right"><b>+</b> Add new categories</a>
+        <tr>
+            <th>ID</th>
+            <th>Description</th>
+            <th>Date</th>
+            <th>Amount</th>            
+            <th>Currency</th>            
+            <th>Paid by</th>            
+            <th>All equal?</th>            
+            <th>Type of split</th>          
+            <!-- <th class="text-center">Actions</th> -->
+        </tr>
+    </thead>
+            {% for expense in expenses %}
+            <tr>
+                <td>{{ expense.id }}</td>
+                <td {% if expense.id | string in error_dict.descr.error_list %} class= "text-danger"{% endif %}>{{ expense.description }}</td>
+                <td>{{ expense.date.date()}}</td>
+                <td>{{ "%0.2f" | format(expense.amount | float) }}</td>
+                <td>{{ expense.currency }}</td>
+                <td>{{ expense.paid_by }}</td>
+                <td>{{ expense.all_equal }}</td>
+                <td>{{ expense.type_split }}</td>
+            </tr> 
+            {% endfor %}
+    </table>
+    </div>
+</div>
+{% if file_valid == "yes" %}
+    <form action="/push_expenses" method="post" >
+        <button class="btn btn-primary" type="submit">Upload</button>
+    </form>
+{% else %}
+<div class="d-inline-block" data-toggle="tooltip" data-placement="top" title="File is not valid, see errors above">
+    <button class="btn btn-light" style="pointer-events: none;" type="button" disabled>Upload</button>
+</div>
+{% endif %}
+
+
+{% endblock %}

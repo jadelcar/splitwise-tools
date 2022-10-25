@@ -3,3 +3,4 @@ __pycache__/*
 .vscode/*
 flask_session/*
 test/input_files/*
+instance/database.db

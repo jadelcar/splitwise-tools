@@ -4,7 +4,19 @@ import urllib.parse
 
 from flask import redirect, render_template, request, session
 from functools import wraps
+from splitwise import Splitwise
+import config as Config
 
+def get_access_token():
+    sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
+    sObj.setAccessToken(session['access_token'])
+    return sObj
+
+def add_to_error_message(descr, error_list, error_message):
+    error_list_str = ', '.join(error_list)
+    error_message = error_message + descr + "(expenses " + error_list_str + ").\n"
+    error_list = []
+    return error_message
 
 def apology(message, code=400):
     """Render message as an apology to user."""
@@ -62,9 +74,4 @@ def lookup(symbol):
 def usd(value):
     """Format value as USD."""
     return f"${value:,.2f}"
-
-def update_portfolios(database, username, symbol, symbol_balance_after):
-    """Update user's portfolio"""
-    database.execute("UPDATE portfolios SET stocks = ? WHERE username = ? AND symbol = ?", symbol_balance_after, username, symbol)
-    return
 

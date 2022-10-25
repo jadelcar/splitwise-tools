@@ -34,14 +34,17 @@
                     {% if session["user_id"] and session["access_token"] %}
                         <ul class="navbar-nav me-auto mt-2">
                             <li class="nav-item"><a class="nav-link" href="/groups">Groups</a></li>
+                            <li class="nav-item"><a class="nav-link" href="/batch_upload">Batch upload</a></li>
                         </ul>
                         <ul class="navbar-nav ms-auto mt-2">
                             <li class="nav-item"><a class="nav-link" href="/logout">Log Out</a></li>
+                            <li class="nav-item"><a class="nav-link">User: {{ session["user_name"] }} </a></li>
                         </ul>
                     {% elif session["user_id"] and not session["access_token"] %}
                     <ul class="navbar-nav ms-auto mt-2">
                         <li class="nav-item"><a class="nav-link" href="/login_sw">Authorize Splitwise</a></li>
                         <li class="nav-item"><a class="nav-link" href="/logout">Log out</a></li>
+                        <li class="nav-item"><a class="nav-link">User: {{ session["user_name"] }} </a></li>
                     </ul>                    
                     {% else %}
                         <ul class="navbar-nav ms-auto mt-2">
@@ -55,7 +58,7 @@
 
         {% if get_flashed_messages() %}
             <header>
-                <div class="alert alert-primary mb-0 text-center" role="alert">
+                <div class="alert alert-primary mb-0 text-center" style="white-space: pre-line" role="alert">
                     {{ get_flashed_messages() | join(" ") }}
                 </div>
             </header>
