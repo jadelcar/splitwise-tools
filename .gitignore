@@ -1,4 +1,5 @@
 __pycache__/*
+*.pyc
 .vscode/*
 flask_session/*
 test/input_files/*
