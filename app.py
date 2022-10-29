@@ -1,3 +1,4 @@
+from cmath import nan
 from flask import Flask, url_for, render_template, request, redirect, session, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_session.__init__ import Session
@@ -8,9 +9,14 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from helpers import *
 
 from splitwise import Splitwise
+from splitwise.expense import Expense
+from splitwise.user import ExpenseUser
 import config as Config
 
 import pandas as pd
+from thefuzz import fuzz
+import math
+
 
 #Create app and Splitwise secret key
 app = Flask(__name__)
@@ -18,11 +24,10 @@ app.secret_key = "test_secret_key"
 
 # Ensure templates are auto-reloaded
 app.config['TEMPLATES_AUTO_RELOAD'] = True
-app.config['FLASK_ENV'] = 'development'
+
 # Configure session to use filesystem (instead of signed cookies)
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
-
 
 Session(app)
 
@@ -116,75 +121,367 @@ def batch_upload():
         return render_template('batch_upload.html', groups=groups)
     else:
         sObj = get_access_token()
+        session.pop('expenses_upload') # clear any previous expense data stored in session
         
+        app_current_user = sObj.getCurrentUser()
+
         # Fetch group info
-        group_id = request.form.get("group_for_upload")
-        group = sObj.getGroup(group_id)
-        group_name = group.getName()
-        group_members = group.getMembers() # list of friend objects
-
-        # Process file submitted
-        file = request.files['batch_expenses_file'] # See https://flask.palletsprojects.com/en/2.2.x/quickstart/#file-uploads and https://flask.palletsprojects.com/en/2.2.x/api/#flask.Request.files
-        df = pd.read_excel(file)
-        # 
-        error_message = ""
-        error_total = 0
-        error_dict = {
-            "descr" : {
-                "error_list" : [] ,
-                "errors" : 0
-            } ,
-            "date" : {
-                "error_list" : [] ,
-                "errors" : 0          
-            }
-        }   
-
-        # Verify upload, looping over each column or column group and over types of error. If an error is detected, add to the error message, indicating the IDs of the expenses affected
-        def add_to_error_list(var_name, error_total=error_total):
-            error_total += 1
-            error_dict[var_name]['error_list'].append(str(id)) #
-            error_dict[var_name]['errors'] += 1
-            return error_total
-
-        # Description > 100
-        for id, descr in zip(df.id, df.description):
-            if len(descr) > 20: error_total = add_to_error_list("descr", error_total)
-            
-        if error_dict['descr']['error_list']: #If there's at least one error
-            error_message = add_to_error_message("Description is longer than 20  characters", error_dict['descr']['error_list'], error_message)
+        group_obj = sObj.getGroup(request.form.get("group_for_upload"))
+        group = {
+            'id' : group_obj.getId(), 
+            'name' : group_obj.getName(), 
+            'members' :  group_obj.getMembers()
+        }
         
-        error_message = add_to_error_message("Second error about dates", error_dict['date']['error_list'], error_message)
-                    
+        """
+        Create a list of dictionaries, each dict containing individual member's data
+         Dict structure:
+        group_members = [
+            {   
+                'id' : 1001
+                'fname' : Javier
+                'lname' : Delgado
+            }, 
+            (...)
+        ]
+        """
+        group_members = []
+        for member in group["members"]: 
+            group_members.append(
+                {
+                    'id' : member.getId() ,
+                    'fname' : member.getFirstName(),
+                    'lname' : member.getLastName()
+                } 
+            )
+
+        # Import user file 
+            # See https://flask.palletsprojects.com/en/2.2.x/quickstart/#file-uploads 
+            # See https://flask.palletsprojects.com/en/2.2.x/api/#flask.Request.files
+        file = request.files['batch_expenses_file'] 
+        expenses_df = pd.read_excel(file)
+        
+        # Map raw user names to Splitwise group member names, using fuzzy matching
+        users_raw = [
+            {
+                'name' : app_current_user.getFirstName(), 
+                'candidates' : [app_current_user.getId()] ,
+                'candidates_names' : [app_current_user.getFirstName()],
+                'id' : app_current_user.getId() ,
+                'correct' : "yes"
+            }
+        ]
+        i = 1 # Start at 1 because we add by feault one for 'you'.
+        for column in expenses_df.columns: # Store names in a list of dicts
+            if column[0] == "_": # If first letter is "_"
+                raw_user = column[1:]
+                users_raw.append(
+                    {
+                        'name' : raw_user, 
+                        'candidates' : [] ,
+                        'candidates_names' : [],
+                        'id' : '?' ,
+                        'correct' : ""
+                    }
+                )
+                current_user = users_raw[i]
+                i += 1 #Update counter
+                # Loop over the members of the group and calculate similscores (ratio). Package https://github.com/seatgeek/thefuzz.
+                for member in group_members:
+                    ratio = fuzz.ratio(raw_user, member['fname'])
+                    if ratio == 100: # In case of a perfect match we stop looking
+                        current_user['candidates'] = [member['id']] # List with one element 
+                        current_user['candidates_names'] = [member['fname']] 
+                        continue # Go to next raw_user
+                    elif ratio > 90:
+                        current_user['candidates'].append(member['id']) # add id of the member under key 'candidates'
+                        current_user['candidates_names'].append(member['name']) 
+                # If there's only one candidate, replace name by the database name
+                if len(current_user['candidates']) == 1:
+                    current_user['name'] = current_user['candidates_names'][0] # first element in the list of candidates names
+                    current_user['id'] = str(current_user['candidates'][0])
+                    current_user['correct'] = "yes"
+                else:
+                    current_user['correct'] = "no"
+
+        # In the df, remove the underscore at start of column names     
+        expenses_df.columns = expenses_df.columns.str.replace("^_", "", regex=True) # str.replace uses regex by default. To change it, add regex=False
+        expenses_df.columns = expenses_df.columns.str.replace("you", app_current_user.getFirstName(), regex=True)
+        
+        # Loop through payers and add the payer ID (if)
+        for index, expense in expenses_df.iterrows():
+            raw_payer_name = expense['paid_by']
+            if raw_payer_name == "you": # Set values if payer = 'you'
+                expense['payer_name'] = app_current_user.getFirstName()
+                expense['payer_id'] = app_current_user.getId()
+            else: 
+                for d in users_raw:
+                    if d['name'] == raw_payer_name:
+                        if d['correct'] == "yes": #  Payer matches a column which also matches a group member
+                            expense['payer_id'] = d['candidates'][0] #First element in the list 'candidate', which we know because correct = 'y'
+                            expense['payer_check'] = "correct"
+                        elif d['correct'] == "no": # Payer matches column, but col didn't match a group member
+                            expense['payer_id'] = None
+                            expense['payer_check'] = "No match in group members"
+                    else: 
+                        continue #Move to next 
+                if "payer_id" not in expense.keys(): # If after checking all the members no match was found, record this result
+                    expense['payer_id'] = None
+                    expense['payer_check'] = "No match in column names"
+
+        """ 
+        Structure of dicts in users_raw
+        users_raw = [
+            {
+                'raw_name' : "Jvier" ,
+                'candidates' : [1245, 1765]
+            }
+            (...)
+        ]
+        """        
+
+        # (TBD) Show user the results and ask for verification
+
+        """
+        Verification of file
+
+        error_dict is a dict of dicts. Each dict refers to one type of error (description too long, date format, wrong group member etc.) and contains:
+            'message': Displayed to user
+            'element_type': Type of element affected (expense, member etc.)
+            'error_list': List of elements affected
+        
+        As we identify errors, we populate the dicts with function 'add_error' and build the error message progressively with function 'add_to_error_msg'.
+        """
+        # Split types supported         
+        split_types = ['amount', 'equal', 'share'] 
+
+        # Dictionary with different error types
+        error_master = {
+            'descr' : {
+                "message" : "Expense description is longer than 20  characters" ,
+                "element_type" : "expense(s)" } ,
+            'date' : {
+                "message" : "Review date format" ,
+                "element_type" : "expense(s)" },
+            'group_member' : {
+                "message" : "Name should only match one group member" ,
+                "element_type" : "column(s)" },
+            'n_members' : {
+                "message" : "Number of friends in file is different from members in the group" ,
+                "element_type" : "general" },    
+            'shares_no_addup' : {
+                "message" : "Shares do not add up" ,
+                "element_type" : "expense(s)" },
+            'split_type_unsupported' : {
+                "message" : "Split type is not supported, choose one of the following: " + ", ".join(["'" + t + "'" for t in split_types]),
+                "element_type" : "expense(s)" }
+        }
+        for d in error_master.keys(): 
+            error_master[str(d)]['error_list'] = [] # Initialize error list for each type of error
+
+        # Function to add an element to error list
+        def add_to_error_list(error_type, element_id, error_master=error_master): #error_master = error_master means by default we import this dict with the same name
+            """ Add an element to error list, indicating error type and element ID """
+            error_master[error_type]['error_list'].append(str(element_id)) 
+            return
+
+        # Function to build the error message
+        def new_error_msg(error_type, error_master = error_master):
+            error_dict = error_master[error_type]
+            if error_dict['element_type'] == 'general':
+                message = error_dict['message']+ ".\n"
+            else:
+                error_list_str = ', '.join(error_dict['error_list'])
+                message = error_dict['message'] + " (" + error_dict['element_type'] + " " + error_list_str + ").\n"
+            return message
+
+        # Error 1: Friend name matches none or > 1 group member
+        for raw_user in users_raw:
+            if len(raw_user['candidates']) != 1: add_to_error_list("group_member", raw_user['name'])
+
+        # Error 2: Number of friends in file is different than group members
+        if len(group['members']) != len(users_raw): add_to_error_list("n_members", 1)
+
+        # Error 3: Description length > 50 ('descr')
+        for id, descr in zip(expenses_df.id, expenses_df.description):
+            if len(descr) > 50: 
+                add_to_error_list("descr", id)
+
+        # Error 4: Shares do not add up
+        # Make a list of column names we want to add up
+        cols_to_add = []
+        for member in group['members']: 
+            cols_to_add.append(member.getFirstName())
+
+        #Error 5: Split type not supported
+        for id, type_split, all_equal in zip(expenses_df.id, expenses_df.type_split, expenses_df.all_equal):
+            if type_split not in split_types and all_equal != 'y': 
+                add_to_error_list("split_type_unsupported", id)
+
+        # Add up the shares and compare with total amount
+        expenses_df['total_shares'] = expenses_df[cols_to_add].sum(axis=1) 
+        for id, type_split, amount, total_shares in zip(expenses_df.id, expenses_df.type_split, expenses_df.amount, expenses_df.total_shares):
+            if type_split != "": 
+                if type_split == "amount" and total_shares != amount : 
+                    add_to_error_list("shares_no_addup", id)
+                if type_split == "shares" and total_shares != 100 : 
+                    add_to_error_list("shares_no_addup", id)
+                
+                
+            
+
         # Date cannot be parsed
         # for date in df.date:
         #     if is_date(date) == TRUE:
-        expenses = df.to_dict('records')
-        print(expenses)
-        if error_total == 0:
+
+        # Build the error message, looping over the different errors
+        error_message = ""
+        for type in error_master.keys():
+            if len(error_master[type]['error_list']) > 0 : error_message += new_error_msg(type)
+        
+        # Get the total sum of errors
+        error_count = 0
+        for t in error_master.values():
+            error_count += len(t['error_list'])
+        
+        """
+        Description of a comprehension (one-liner) [Not implemented bc it was written for a simple dict so it was replaced by a conventional loop]
+
+        A one liner is better read from back to front and from inside to outside
+            function(   return (passed on to function)  loop                            if condition)
+            sum     (   len(t['error_list'])            for t in error_master.values()  if t)
+        
+        Steps (application in our case)
+            1. Loop over certain values (keys in the dict)
+            2. Apply an if condition (if the key exists)
+            3. Write expression to be returned (# of elements in list found under key 'error_list')
+            4. Apply function using all the returned values (sum all the 'lengths')
+        """
+
+        # Pass dataframe to a list of dicts
+        expenses = expenses_df.to_dict('records')
+
+        # Calculate share paid and owed for each user in each expense, and store in a dict within expense
+        for expense in expenses:
+            if expense['type_split'] in split_types and expense['all_equal'] != "y":
+                for member in group['members']:
+                    # Share paid: Full amount or zero (no support for several payers yet)
+                    member_name = member.getFirstName()
+                    if expense['paid_by'] == member_name : share_paid = expense['amount']
+                    else: share_paid = 0
+                    
+                    # Share owed, depends on the type of split
+                    indiv_cell_owed = expense[member_name] # fetch number under this member's column
+                    if expense['all_equal'] == "y": # Default: Split equally among all group members
+                        share_owed = expense['amount'] / len(group['members'])
+                    else:
+                        if expense['type_split'] == "share":
+                            share_owed = round((indiv_cell_owed/100)*expense['amount'], 2) # e.g. share = 10 --> 0.1*amount
+                        elif expense['type_split'] == "amount":
+                            share_owed = indiv_cell_owed # e.g. share_owed for Javier is the value under column "_Javier"
+                        elif expense['type_split'] == "equal":
+                            members_to_split = 0
+                            for member_inner in group['members']: 
+                                if expense[member_inner.getFirstName()] != '': members_to_split += 1 # Count how many members to split among
+                            share_owed = round(expense['amount'] / members_to_split) # Get value from cell under the person's column
+                    
+                    #Add the 'shares' dict to the corresponding key inside the expense
+                    shares = { "share_owed" : "", "share_paid" : ""}
+                    shares = {
+                        "share_owed" : share_owed,
+                        "share_paid" : share_paid
+                    }
+
+                    expense[member_name + "_shares"] = shares # e.g. expense['javier_shares'] = {"share_owed" : 7.5, "share_paid" : 15}
+            else: 
+                for member in group['members']:
+                    member_name = member.getFirstName()
+                    shares = { "share_owed" : "", "share_paid" : ""}
+                    expense[member_name + "_shares"] = shares
+            """
+            Ensure shares add up to the total amount by adding/substracting the difference from the uploading user (Since we are checking for errors, it should only be because of rounding and thus small)
+            """
+            # Add up the shares owed of all members in the expense: For this, loop over members, go to the expense and get the share owed, whtich is within a dict called after member name (expense[*MemberName*_shares]["share_owed"]). But only if there is a key called 'share_owed' within the dict(if "share_owed" in expense[*MemberName*_shares].keys()). Once you have this list of values, we sum them up
+            indiv_shares_added = sum(
+                expense[member.getFirstName() + "_shares"]["share_owed"] 
+                for member in group['members'] 
+                if expense[member.getFirstName() + "_shares"]["share_owed"] != "") 
+
+            print("Expense" + str(expense['id']) + ": " + str(indiv_shares_added))
+                                    
+            if indiv_shares_added != expense['amount'] and math.isnan(indiv_shares_added) == False:
+                diff = expense['amount'] - indiv_shares_added
+                user_share_owed = expense[app_current_user.getFirstName() + '_shares']['share_owed']
+                print("Total shares: " + str(expense[app_current_user.getFirstName() + '_shares']['share_owed']))
+                print("Diff: " + str(diff))
+                if user_share_owed!= '':
+                    user_share_owed += diff
+            
+        """
+        expenses = [
+            {
+                'id' : 1
+                'description' : "Expenditure for..."
+                (...)
+                '_you' : 20
+                'Alberto' : 15
+                'Pedro' : 30
+            }
+        ]
+        """
+
+        if error_count == 0:
             # Store the dict in session and redirect to editing site
-            session['expenses_upload'] = expenses
+            # session['expenses_upload'] = expenses
+            # session['expenses_upload_group'] = group
+
             # Redirect to the website for editing (edit_upload.html), passing on the data on expenses for display
-            return render_template("upload_edit.html", file_valid = "yes", group_id = group_id, group_name = group_name, expenses = expenses)
+            # Consider improving this view with using pivottable.js (https://github.com/nicolaskruchten/jupyter_pivottablejs)
+            return render_template("upload_edit.html", file_valid = "yes", group = group, users_raw = users_raw, expenses = expenses, error_master = error_master)
         else:
             flash(error_message)
-            return render_template("upload_edit.html", file_valid = "no", group_id = group_id, group_name = group_name, expenses = expenses, error_dict= error_dict)
+            return render_template("upload_edit.html", file_valid = "no",  group = group, users_raw = users_raw, expenses = expenses, error_master = error_master)
 
 # TBD: Depending on the process result
     # If the process fails: Show errors
     # If the process timeouts: Show apology
     # If the process succeeds:
 
-@app.route('/push_expenses', methods=['POST'])
-def push_expenses():
-    #Another option: Parse the data received as JSON in the Splitwise format needed (https://flask.palletsprojects.com/en/2.2.x/api/#flask.Request.get_json), also see the property 'JSON'
+# @app.route('/push_expenses', methods=['POST'])
+# def push_expenses():
+#     #Another option: Parse the data received as JSON in the Splitwise format needed (https://flask.palletsprojects.com/en/2.2.x/api/#flask.Request.get_json), also see the property 'JSON'
     
-    # Upload each expense to Splitwise
-    # for expense in session['batch_expenses']:
+#     # Open the expenses dict
+#     expenses = session['batch_expenses']
+#     group = session['group']
 
-    return render_template("upload_success_summary.html")
 
-    # If the process fails (except) make sure to remove the expenses from session
+#     # Upload each expense to Splitwise
+#     for e in expenses:
+#         expense = Expense()
+#         expense.setCost(e['amount'])
+#         expense.setDescription(e['description'])
+#         expense.setGroupId(group['id'])
+#         if e['all_equal'] == "y":
+#             for member in group['members']:
+#                 user = ExpenseUser()
+#                 user.setId(member['id'])
+#                 user.setId(member['id'])
+#                 expense.addUser(user)
+
+
+
+
+#     # Create a csv file for user to download
+
+#     # Remove expenses from session
+
+#     # Return summary
+#     return render_template("upload_success_summary.html")
+
+    
+
+#     # If the process fails (i.e. an exception) make sure to remove the expenses from session
 
 @app.route("/login_app", methods=["GET", "POST"])
 def login():
@@ -332,8 +629,8 @@ def register():
     # Redirect to home (showing a summary of stocks owned and cash)
     return render_template("home.html")
 
-# if __name__ == "__main__":
-#     app.run(debug=True)
-#     app.jinja_env.auto_reload = True
-#     app.config['TEMPLATES_AUTO_RELOAD'] = True
-#     app.run(debug=True, host='127.0.0.1:5000')
+if __name__ == "__main__":
+    app.run(debug=True)
+    # app.jinja_env.auto_reload = True
+    # app.config['TEMPLATES_AUTO_RELOAD'] = True
+    # app.run(debug=True, host='127.0.0.1:5000')

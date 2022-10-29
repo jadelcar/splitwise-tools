@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}
-    Register
+    Edit expenses
 {% endblock %}
 
 {% block body %}
@@ -11,11 +11,10 @@
 <!------ Include the above in your HEAD tag ---------->
 
 <div class="container">
-    <div class="row col-md-6 col-md-offset-2 custyle">
-    The following expenses will be uploaded to {{ group_name }}[{{ group_id }}].
+    <div class="row col-md-8 custyle">
+    The following expenses will be uploaded to group '{{ group.name }}'[ID: {{ group.id }}].
     <table class="table table-striped custab">
     <thead>
-    <a href="#" class="btn btn-primary btn-xs pull-right"><b>+</b> Add new categories</a>
         <tr>
             <th>ID</th>
             <th>Description</th>
@@ -24,33 +23,45 @@
             <th>Currency</th>            
             <th>Paid by</th>            
             <th>All equal?</th>            
-            <th>Type of split</th>          
+            <th>Type of split</th>
+            {% for raw_user in users_raw %}
+                <th>{{ raw_user.name }} [{{ raw_user.id }}]</th>
+            {% endfor %}
+            <th>Total shares</th>
+            <th></th>          
             <!-- <th class="text-center">Actions</th> -->
         </tr>
     </thead>
             {% for expense in expenses %}
             <tr>
                 <td>{{ expense.id }}</td>
-                <td {% if expense.id | string in error_dict.descr.error_list %} class= "text-danger"{% endif %}>{{ expense.description }}</td>
+                <td {% if expense.id | string in error_master.descr.error_list %} class= "text-danger"{% endif %}>{{ expense.description }}</td>
                 <td>{{ expense.date.date()}}</td>
                 <td>{{ "%0.2f" | format(expense.amount | float) }}</td>
                 <td>{{ expense.currency }}</td>
                 <td>{{ expense.paid_by }}</td>
                 <td>{{ expense.all_equal }}</td>
-                <td>{{ expense.type_split }}</td>
+                <td {% if expense.id | string in error_master.split_type_unsupported.error_list %} class= "text-danger"{% endif %}>{{ expense.type_split }}</td>
+                {% for raw_user in users_raw %}
+                    {% set raw_username = raw_user.name %}
+                    {% set dict_name = raw_username ~ "_shares" %}
+                    <td>{{ "%0.2f" | format(expense[raw_username] | float) }} 
+                        ({{ "%0.2f" | format(expense[dict_name].share_owed | float) }})</td>
+                {% endfor %}
+                <td>{{expense.total_shares}}</td>
             </tr> 
             {% endfor %}
     </table>
     </div>
 </div>
 {% if file_valid == "yes" %}
-    <form action="/push_expenses" method="post" >
+    <form action="" method="post" >
         <button class="btn btn-primary" type="submit">Upload</button>
     </form>
 {% else %}
-<div class="d-inline-block" data-toggle="tooltip" data-placement="top" title="File is not valid, see errors above">
-    <button class="btn btn-light" style="pointer-events: none;" type="button" disabled>Upload</button>
-</div>
+    <div class="d-inline-block" data-toggle="tooltip" data-placement="top" title="File is not valid, see errors above">
+        <button class="btn btn-light" style="pointer-events: none;" type="button" disabled>Upload</button>
+    </div>
 {% endif %}
 
 

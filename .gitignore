@@ -3,6 +3,7 @@
 *.pyc
 .vscode/
 flask_session/
+flask_session/*
 test/
 instance/database.db
 test/
