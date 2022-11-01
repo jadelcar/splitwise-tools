@@ -8,6 +8,9 @@ test/
 instance/database.db
 test/
 
+node_modules/*
+node_modules/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -64,4 +67,3 @@ __pycache__/app.cpython-38.pyc
 __pycache__/helpers.cpython-38.pyc
 flask_session/2029240f6d1128be89ddc32729463129
 
-~$
