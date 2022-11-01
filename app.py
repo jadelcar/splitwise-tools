@@ -1,4 +1,5 @@
 from cmath import nan
+
 from flask import Flask, url_for, render_template, request, redirect, session, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_session.__init__ import Session
@@ -56,16 +57,16 @@ sqlite3 instance/database.db
 ALTER TABLE user ADD COLUMN split_access_token type text;
 
 """
-class Todo(db.Model):
-    #__tablename__ = "to_dos" # Define the table name (Not in the tutorial)
-    id = db.Column(db.Integer, primary_key=True)
-    content = db.Column(db.String(200), nullable=False) #nullable false means the user cannot leave it null (empty)
-    #completed =db.Column(db.Integer, default=0)
-    date_created = db.Column(db.DateTime, default=datetime.utcnow)
+# class Todo(db.Model):
+#     #__tablename__ = "to_dos" # Define the table name (Not in the tutorial)
+#     id = db.Column(db.Integer, primary_key=True)
+#     content = db.Column(db.String(200), nullable=False) #nullable false means the user cannot leave it null (empty)
+#     #completed =db.Column(db.Integer, default=0)
+#     date_created = db.Column(db.DateTime, default=datetime.utcnow)
     
-    #Function that returns a string every time we create a new element
-    def __repr__(self):
-        return '<Task %r>' % self.id
+#     #Function that returns a string every time we create a new element
+#     def __repr__(self):
+#         return '<Task %r>' % self.id
 
 class User(db.Model):
     #__tablename__ = "to_dos" # Define the table name (Not in the tutorial)
@@ -121,9 +122,10 @@ def batch_upload():
         return render_template('batch_upload.html', groups=groups)
     else:
         sObj = get_access_token()
-        session.pop('expenses_upload') # clear any previous expense data stored in session
-        
         app_current_user = sObj.getCurrentUser()
+        # if 'expenses_upload' in session:
+        #     session.pop('expenses_upload') # clear any previous expense data stored in session
+        
 
         # Fetch group info
         group_obj = sObj.getGroup(request.form.get("group_for_upload"))
@@ -206,28 +208,29 @@ def batch_upload():
 
         # In the df, remove the underscore at start of column names     
         expenses_df.columns = expenses_df.columns.str.replace("^_", "", regex=True) # str.replace uses regex by default. To change it, add regex=False
-        expenses_df.columns = expenses_df.columns.str.replace("you", app_current_user.getFirstName(), regex=True)
+        expenses_df.columns = expenses_df.columns.str.replace("(?i)you", app_current_user.getFirstName(), regex=True) # (?i) makes it case insensitive
         
         # Loop through payers and add the payer ID (if)
         for index, expense in expenses_df.iterrows():
             raw_payer_name = expense['paid_by']
-            if raw_payer_name == "you": # Set values if payer = 'you'
-                expense['payer_name'] = app_current_user.getFirstName()
-                expense['payer_id'] = app_current_user.getId()
+            if str.lower(raw_payer_name) == "you": # Set values if payer = 'you'
+                expenses_df.at[index,'paid_by'] = app_current_user.getFirstName() 
+                expenses_df.at[index,'payer_name'] = app_current_user.getFirstName()
+                expenses_df.at[index,'payer_id'] = app_current_user.getId()
             else: 
                 for d in users_raw:
                     if d['name'] == raw_payer_name:
                         if d['correct'] == "yes": #  Payer matches a column which also matches a group member
-                            expense['payer_id'] = d['candidates'][0] #First element in the list 'candidate', which we know because correct = 'y'
-                            expense['payer_check'] = "correct"
+                            expenses_df.at[index,'payer_id'] = d['candidates'][0] #First element in the list 'candidate', which we know because correct = 'y'
+                            expenses_df.at[index,'payer_check'] = "correct"
                         elif d['correct'] == "no": # Payer matches column, but col didn't match a group member
-                            expense['payer_id'] = None
-                            expense['payer_check'] = "No match in group members"
+                            expenses_df.at[index,'payer_id'] = nan
+                            expenses_df.at[index,'payer_check'] = "No match in group members"
                     else: 
                         continue #Move to next 
                 if "payer_id" not in expense.keys(): # If after checking all the members no match was found, record this result
-                    expense['payer_id'] = None
-                    expense['payer_check'] = "No match in column names"
+                    expenses_df.at[index,'payer_id'] = nan
+                    expenses_df.at[index,'payer_check'] = "No match in column names"
 
         """ 
         Structure of dicts in users_raw
@@ -282,8 +285,8 @@ def batch_upload():
         # Function to add an element to error list
         def add_to_error_list(error_type, element_id, error_master=error_master): #error_master = error_master means by default we import this dict with the same name
             """ Add an element to error list, indicating error type and element ID """
-            error_master[error_type]['error_list'].append(str(element_id)) 
-            return
+            error_master[error_type]['error_list'].append(str(element_id))
+            return element_id 
 
         # Function to build the error message
         def new_error_msg(error_type, error_master = error_master):
@@ -326,9 +329,6 @@ def batch_upload():
                     add_to_error_list("shares_no_addup", id)
                 if type_split == "shares" and total_shares != 100 : 
                     add_to_error_list("shares_no_addup", id)
-                
-                
-            
 
         # Date cannot be parsed
         # for date in df.date:
@@ -367,6 +367,7 @@ def batch_upload():
                 for member in group['members']:
                     # Share paid: Full amount or zero (no support for several payers yet)
                     member_name = member.getFirstName()
+                    member_id = member.getId()
                     if expense['paid_by'] == member_name : share_paid = expense['amount']
                     else: share_paid = 0
                     
@@ -386,17 +387,26 @@ def batch_upload():
                             share_owed = round(expense['amount'] / members_to_split) # Get value from cell under the person's column
                     
                     #Add the 'shares' dict to the corresponding key inside the expense
-                    shares = { "share_owed" : "", "share_paid" : ""}
                     shares = {
-                        "share_owed" : share_owed,
+                        "user_id" : member_id ,
+                        "share_owed" : share_owed ,
                         "share_paid" : share_paid
                     }
 
                     expense[member_name + "_shares"] = shares # e.g. expense['javier_shares'] = {"share_owed" : 7.5, "share_paid" : 15}
             else: 
+                #If paid_equal = y 
                 for member in group['members']:
                     member_name = member.getFirstName()
-                    shares = { "share_owed" : "", "share_paid" : ""}
+                    member_id = member.getId() 
+                    if expense['paid_by'] == member_name : share_paid = expense['amount']
+                    else: share_paid = 0
+                    
+                    shares = { 
+                        "user_id" : member_id ,
+                        "share_owed" : expense['amount'] / len(group['members']),
+                        "share_paid" : share_paid
+                    }
                     expense[member_name + "_shares"] = shares
             """
             Ensure shares add up to the total amount by adding/substracting the difference from the uploading user (Since we are checking for errors, it should only be because of rounding and thus small)
@@ -432,56 +442,91 @@ def batch_upload():
 
         if error_count == 0:
             # Store the dict in session and redirect to editing site
-            # session['expenses_upload'] = expenses
-            # session['expenses_upload_group'] = group
+            session['expenses_upload'] = expenses
+            session['expenses_upload_group_members'] = group_members
+            session['expenses_upload_group_id'] = group['id']
+            session['expenses_upload_group_name'] = group['name']
 
             # Redirect to the website for editing (edit_upload.html), passing on the data on expenses for display
             # Consider improving this view with using pivottable.js (https://github.com/nicolaskruchten/jupyter_pivottablejs)
-            return render_template("upload_edit.html", file_valid = "yes", group = group, users_raw = users_raw, expenses = expenses, error_master = error_master)
+            return render_template("upload_edit.html", file_valid = "yes", group_id = group['id'], group_name = group['name'], group = group, users_raw = users_raw, expenses = expenses, error_master = error_master)
         else:
             flash(error_message)
-            return render_template("upload_edit.html", file_valid = "no",  group = group, users_raw = users_raw, expenses = expenses, error_master = error_master)
+            return render_template("upload_edit.html", file_valid = "no",  group_id = group['id'], group_name = group['name'], group = group, users_raw = users_raw, expenses = expenses, error_master = error_master)
 
 # TBD: Depending on the process result
     # If the process fails: Show errors
     # If the process timeouts: Show apology
     # If the process succeeds:
 
-# @app.route('/push_expenses', methods=['POST'])
-# def push_expenses():
-#     #Another option: Parse the data received as JSON in the Splitwise format needed (https://flask.palletsprojects.com/en/2.2.x/api/#flask.Request.get_json), also see the property 'JSON'
+@app.route('/push_expenses', methods=['POST'])
+def push_expenses():
+    #Another option: Parse the data received as JSON in the Splitwise format needed (https://flask.palletsprojects.com/en/2.2.x/api/#flask.Request.get_json), also see the property 'JSON'
+    sObj = get_access_token()
+    app_current_user = sObj.getCurrentUser()
+
+    # The data to upload was stored in session
+    expenses = session['expenses_upload']
+    group_id = session['expenses_upload_group_id']
+    group = sObj.getGroup(group_id)
+    group_name = group.name
+
+    # Extract needed data
+    group_members = []
+    for member in group.getMembers():
+        group_members.append(
+            {
+                "name" : member.first_name ,
+                "id" : member.id
+            }
+        )
+
+    # Upload each expense to Splitwise
+    expenses_failed = []
+    expenses_sw_obj = []
+    for e in expenses:
+        expense = Expense()
+        expense.setCost(e['amount'])
+        expense.setDescription(e['description'])
+        expense.setGroupId(group.id)
+        expense.setCreationMethod('app_tools')
+        expense.setDate(e['date'])
+        expense.setCurrencyCode(e['currency'])
+        if e['all_equal'] == "y" and str.lower(e['paid_by']) == 'you': 
+            expense.setSplitEqually() #Default is 'should_split = True'
+            pass
+        else:
+            for member in group_members:
+                user_share_dict = e[member['name'] + "_shares"] # Contains share_owed and share_paid
+                if sum(user_share_dict.values()) > 0: # if any of share_owed or share_paid  is > 0, the user is a member of this expense 
+                    user = ExpenseUser()
+                    user.setId(user_share_dict['user_id'])
+                    user.setPaidShare(user_share_dict['share_paid'])
+                    user.setOwedShare(user_share_dict['share_owed'])
+                    expense.addUser(user)
+        expenses_sw_obj.append(expense)
     
-#     # Open the expenses dict
-#     expenses = session['batch_expenses']
-#     group = session['group']
-
-
-#     # Upload each expense to Splitwise
-#     for e in expenses:
-#         expense = Expense()
-#         expense.setCost(e['amount'])
-#         expense.setDescription(e['description'])
-#         expense.setGroupId(group['id'])
-#         if e['all_equal'] == "y":
-#             for member in group['members']:
-#                 user = ExpenseUser()
-#                 user.setId(member['id'])
-#                 user.setId(member['id'])
-#                 expense.addUser(user)
-
-
-
-
-#     # Create a csv file for user to download
-
-#     # Remove expenses from session
-
-#     # Return summary
-#     return render_template("upload_success_summary.html")
-
     
+    # Upload expenses
+    for expense in expenses_sw_obj:
+        nExpense, errors = sObj.createExpense(expense)
+        if nExpense is not None: 
+            print("Expense number: " + str(nExpense.getId()))
+        else:
+            print("Expense errors: " + str(errors))
+            expenses_failed.append(
+                {
+                    'id': e['id'],
+                    'error' : errors
+                }
+            )
 
-#     # If the process fails (i.e. an exception) make sure to remove the expenses from session
+    # Return summary
+    if len(expenses_failed) > 0:
+        return render_template("upload_fail_summary.html", expenses_failed = expenses_failed, group_id = group_id, group_name = group_name)
+    else:
+        return render_template("upload_success_summary.html", group_id = group_id)
+
 
 @app.route("/login_app", methods=["GET", "POST"])
 def login():
@@ -518,16 +563,14 @@ def login():
         
 
         # Try to load access_token (only if user has authorized Splitwise before)
-        try:
-            sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
-            url, secret = sObj.getAuthorizeURL()
-            access_token = sObj.getAccessToken(rows[0]["split_oauth_token"], secret,rows[0]["split_oauth_verifier"])
-            session['access_token'] = access_token
-        except:
-            return redirect("/")     
+        # try:
+        #     sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
+        #     url, secret = sObj.getAuthorizeURL()
+        #     access_token = sObj.getAccessToken(rows[0]["split_oauth_token"], secret,rows[0]["split_oauth_verifier"])
+        #     session['access_token'] = access_token
+        # except:
+        #     return redirect("/")     
         return redirect("/")
-
-        
 
     # User reached route via GET (as by clicking a link or via redirect)
     else:

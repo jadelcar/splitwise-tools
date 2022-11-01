@@ -12,7 +12,7 @@
 
 <div class="container">
     <div class="row col-md-8 custyle">
-    The following expenses will be uploaded to group '{{ group.name }}'[ID: {{ group.id }}].
+    The following expenses will be uploaded to group '{{ group_name }}' [ID: {{ group_id }}].
     <table class="table table-striped custab">
     <thead>
         <tr>
@@ -28,7 +28,6 @@
                 <th>{{ raw_user.name }} [{{ raw_user.id }}]</th>
             {% endfor %}
             <th>Total shares</th>
-            <th></th>          
             <!-- <th class="text-center">Actions</th> -->
         </tr>
     </thead>
@@ -55,7 +54,7 @@
     </div>
 </div>
 {% if file_valid == "yes" %}
-    <form action="" method="post" >
+    <form action="/push_expenses" method="post" >
         <button class="btn btn-primary" type="submit">Upload</button>
     </form>
 {% else %}
