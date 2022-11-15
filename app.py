@@ -6,8 +6,7 @@ from flask_session.__init__ import Session
 from datetime import datetime
 from tempfile import mkdtemp
 from werkzeug.security import check_password_hash, generate_password_hash
-
-from helpers import *
+from jinja2 import pass_context
 
 from splitwise import Splitwise
 from splitwise.expense import Expense
@@ -17,6 +16,7 @@ import config as Config
 import pandas as pd
 from thefuzz import fuzz
 import math
+import re
 
 
 #Create app and Splitwise secret key
@@ -32,9 +32,22 @@ app.config["SESSION_TYPE"] = "filesystem"
 
 Session(app)
 
-#Initalize the database
+# #Initalize the database
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db' # three '/' is relative path, 4 would be aboslute
 db = SQLAlchemy(app)
+
+
+
+#Import classes and helper functions
+from helpers import *
+from classes import *
+
+@app.context_processor
+def include_UpMember_class():
+    return {'UpMember': UpMember}
+
+# app.add_template_global(UpExpense, 'UpExpense')
+# app.add_template_global(UpMember, 'UpMember')
 
 
 """
@@ -57,16 +70,16 @@ sqlite3 instance/database.db
 ALTER TABLE user ADD COLUMN split_access_token type text;
 
 """
-# class Todo(db.Model):
-#     #__tablename__ = "to_dos" # Define the table name (Not in the tutorial)
-#     id = db.Column(db.Integer, primary_key=True)
-#     content = db.Column(db.String(200), nullable=False) #nullable false means the user cannot leave it null (empty)
-#     #completed =db.Column(db.Integer, default=0)
-#     date_created = db.Column(db.DateTime, default=datetime.utcnow)
+class Todo(db.Model):
+    #__tablename__ = "to_dos" # Define the table name (Not in the tutorial)
+    id = db.Column(db.Integer, primary_key=True)
+    content = db.Column(db.String(200), nullable=False) #nullable false means the user cannot leave it null (empty)
+    #completed =db.Column(db.Integer, default=0)
+    date_created = db.Column(db.DateTime, default=datetime.utcnow)
     
-#     #Function that returns a string every time we create a new element
-#     def __repr__(self):
-#         return '<Task %r>' % self.id
+    #Function that returns a string every time we create a new element
+    def __repr__(self):
+        return '<Task %r>' % self.id
 
 class User(db.Model):
     #__tablename__ = "to_dos" # Define the table name (Not in the tutorial)
@@ -123,9 +136,6 @@ def batch_upload():
     else:
         sObj = get_access_token()
         app_current_user = sObj.getCurrentUser()
-        # if 'expenses_upload' in session:
-        #     session.pop('expenses_upload') # clear any previous expense data stored in session
-        
 
         # Fetch group info
         group_obj = sObj.getGroup(request.form.get("group_for_upload"))
@@ -163,7 +173,20 @@ def batch_upload():
         file = request.files['batch_expenses_file'] 
         expenses_df = pd.read_excel(file)
         
-        # Map raw user names to Splitwise group member names, using fuzzy matching
+        """Map raw user names to Splitwise group member names, using fuzzy matching """
+        # Create a list for holding users in the uploaded file
+        up_users = {}
+
+        # Create an instance of class 'UpMember' for the user uploading the file         
+        current_user_UpMember = UpMember(
+            orig_name = app_current_user.getFirstName(), 
+            candidates = [{'id' : app_current_user.getId(), 'name' : app_current_user.getFirstName()}],
+            final_id = app_current_user.getId(), 
+            final_name = app_current_user.getFirstName()
+            )
+        up_users[app_current_user.getFirstName()] = current_user_UpMember
+        
+        """ 
         users_raw = [
             {
                 'name' : app_current_user.getFirstName(), 
@@ -173,82 +196,45 @@ def batch_upload():
                 'correct' : "yes"
             }
         ]
-        i = 1 # Start at 1 because we add by feault one for 'you'.
-        for column in expenses_df.columns: # Store names in a list of dicts
-            if column[0] == "_": # If first letter is "_"
-                raw_user = column[1:]
-                users_raw.append(
-                    {
-                        'name' : raw_user, 
-                        'candidates' : [] ,
-                        'candidates_names' : [],
-                        'id' : '?' ,
-                        'correct' : ""
-                    }
-                )
-                current_user = users_raw[i]
-                i += 1 #Update counter
-                # Loop over the members of the group and calculate similscores (ratio). Package https://github.com/seatgeek/thefuzz.
-                for member in group_members:
-                    ratio = fuzz.ratio(raw_user, member['fname'])
-                    if ratio == 100: # In case of a perfect match we stop looking
-                        current_user['candidates'] = [member['id']] # List with one element 
-                        current_user['candidates_names'] = [member['fname']] 
-                        continue # Go to next raw_user
-                    elif ratio > 90:
-                        current_user['candidates'].append(member['id']) # add id of the member under key 'candidates'
-                        current_user['candidates_names'].append(member['name']) 
-                # If there's only one candidate, replace name by the database name
-                if len(current_user['candidates']) == 1:
-                    current_user['name'] = current_user['candidates_names'][0] # first element in the list of candidates names
-                    current_user['id'] = str(current_user['candidates'][0])
-                    current_user['correct'] = "yes"
-                else:
-                    current_user['correct'] = "no"
+        """
 
-        # In the df, remove the underscore at start of column names     
-        expenses_df.columns = expenses_df.columns.str.replace("^_", "", regex=True) # str.replace uses regex by default. To change it, add regex=False
-        expenses_df.columns = expenses_df.columns.str.replace("(?i)you", app_current_user.getFirstName(), regex=True) # (?i) makes it case insensitive
-        
-        # Loop through payers and add the payer ID (if)
-        for index, expense in expenses_df.iterrows():
-            raw_payer_name = expense['paid_by']
-            if str.lower(raw_payer_name) == "you": # Set values if payer = 'you'
-                expenses_df.at[index,'paid_by'] = app_current_user.getFirstName() 
-                expenses_df.at[index,'payer_name'] = app_current_user.getFirstName()
-                expenses_df.at[index,'payer_id'] = app_current_user.getId()
-            else: 
-                for d in users_raw:
-                    if d['name'] == raw_payer_name:
-                        if d['correct'] == "yes": #  Payer matches a column which also matches a group member
-                            expenses_df.at[index,'payer_id'] = d['candidates'][0] #First element in the list 'candidate', which we know because correct = 'y'
-                            expenses_df.at[index,'payer_check'] = "correct"
-                        elif d['correct'] == "no": # Payer matches column, but col didn't match a group member
-                            expenses_df.at[index,'payer_id'] = nan
-                            expenses_df.at[index,'payer_check'] = "No match in group members"
-                    else: 
-                        continue #Move to next 
-                if "payer_id" not in expense.keys(): # If after checking all the members no match was found, record this result
-                    expenses_df.at[index,'payer_id'] = nan
-                    expenses_df.at[index,'payer_check'] = "No match in column names"
+        #Loop over columns starting with "_"
+        for column in expenses_df.filter(regex='^_', axis=1): # Loop over columns that start with "_"
+            raw_user_name = str(column).replace("_","",1)
+            curr_UpMember = UpMember(orig_name = raw_user_name)
 
-        """ 
-        Structure of dicts in users_raw
-        users_raw = [
-            {
-                'raw_name' : "Jvier" ,
-                'candidates' : [1245, 1765]
-            }
-            (...)
-        ]
-        """        
+            # Loop over the members of the group, calculate similscores (ratio) and add to candidate list if they are close. Package https://github.com/seatgeek/thefuzz.
+            for member in group_members:
+                ratio = fuzz.ratio(raw_user_name, member['fname'])
+                if ratio == 100: # In case of a perfect match we stop looking
+                    curr_UpMember.candidates = [{ 'id' : member['id'], 'name' : member['fname'] }]
+                    continue # Go to next member uploaded in file
+                elif ratio > 90:
+                    curr_UpMember.add_candidate(member['id'], member['fname'])
+            
+            # Review and consolidate results (e.g. If there's only one candidate, replace name by the database name)
+            if len(curr_UpMember.candidates) == 1: #If only one candidate, replace
+                curr_UpMember.final_id = curr_UpMember.candidates[0]['id']
+                curr_UpMember.final_name = curr_UpMember.candidates[0]['name']
+                curr_UpMember.correct = True
+            else:
+                curr_UpMember.correct = False
+
+            #Append the member to the dict with key beign the name (e.g. 'Javier')of users in the file uploaded
+            up_users[raw_user_name] = curr_UpMember
+
+        """ Replace column names in dataframe by the Splitwise names """
+
+        # Replace in the dataframe column names    
+        expenses_df = expenses_df.rename(columns = lambda x : re.sub('^_','', x)) 
+        expenses_df = expenses_df.rename(columns = lambda x : re.sub('(?i)you',app_current_user.first_name, x)) # (?i) makes it case insensitive       
 
         # (TBD) Show user the results and ask for verification
 
         """
         Verification of file
 
-        error_dict is a dict of dicts. Each dict refers to one type of error (description too long, date format, wrong group member etc.) and contains:
+        error_master is a dict of dicts. Each dict refers to one type of error (description too long, date format, wrong group member etc.) and contains:
             'message': Displayed to user
             'element_type': Type of element affected (expense, member etc.)
             'error_list': List of elements affected
@@ -282,53 +268,34 @@ def batch_upload():
         for d in error_master.keys(): 
             error_master[str(d)]['error_list'] = [] # Initialize error list for each type of error
 
-        # Function to add an element to error list
-        def add_to_error_list(error_type, element_id, error_master=error_master): #error_master = error_master means by default we import this dict with the same name
-            """ Add an element to error list, indicating error type and element ID """
-            error_master[error_type]['error_list'].append(str(element_id))
-            return element_id 
-
-        # Function to build the error message
-        def new_error_msg(error_type, error_master = error_master):
-            error_dict = error_master[error_type]
-            if error_dict['element_type'] == 'general':
-                message = error_dict['message']+ ".\n"
-            else:
-                error_list_str = ', '.join(error_dict['error_list'])
-                message = error_dict['message'] + " (" + error_dict['element_type'] + " " + error_list_str + ").\n"
-            return message
-
         # Error 1: Friend name matches none or > 1 group member
-        for raw_user in users_raw:
-            if len(raw_user['candidates']) != 1: add_to_error_list("group_member", raw_user['name'])
+        for raw_user in up_users.values():
+            if len(raw_user.candidates) != 1: add_to_error_list("group_member", raw_user.orig_name, error_master)
 
         # Error 2: Number of friends in file is different than group members
-        if len(group['members']) != len(users_raw): add_to_error_list("n_members", 1)
+        if len(up_users) != len(group['members'])  : add_to_error_list("n_members", 1, error_master)
 
         # Error 3: Description length > 50 ('descr')
         for id, descr in zip(expenses_df.id, expenses_df.description):
             if len(descr) > 50: 
-                add_to_error_list("descr", id)
+                add_to_error_list("descr", id, error_master)
 
         # Error 4: Shares do not add up
-        # Make a list of column names we want to add up
-        cols_to_add = []
-        for member in group['members']: 
-            cols_to_add.append(member.getFirstName())
+        
+        cols_to_add = [member.getFirstName() for member in group['members']] # Make a list of column names we want to add up
 
-        #Error 5: Split type not supported
-        for id, type_split, all_equal in zip(expenses_df.id, expenses_df.type_split, expenses_df.all_equal):
-            if type_split not in split_types and all_equal != 'y': 
-                add_to_error_list("split_type_unsupported", id)
-
-        # Add up the shares and compare with total amount
+        # Add column with the sum of shares and compare with total amount
         expenses_df['total_shares'] = expenses_df[cols_to_add].sum(axis=1) 
         for id, type_split, amount, total_shares in zip(expenses_df.id, expenses_df.type_split, expenses_df.amount, expenses_df.total_shares):
-            if type_split != "": 
-                if type_split == "amount" and total_shares != amount : 
-                    add_to_error_list("shares_no_addup", id)
-                if type_split == "shares" and total_shares != 100 : 
-                    add_to_error_list("shares_no_addup", id)
+            if type_split == "amount" and total_shares != amount : 
+                add_to_error_list("shares_no_addup", id, error_master)
+            elif type_split == "shares" and total_shares != 100 : 
+                add_to_error_list("shares_no_addup", id, error_master)
+        
+        # Error 5: Split type not supported
+        for id, type_split, all_equal in zip(expenses_df.id, expenses_df.type_split, expenses_df.all_equal):
+            if type_split not in split_types and all_equal != 'y': 
+                add_to_error_list("split_type_unsupported", id, error_master)
 
         # Date cannot be parsed
         # for date in df.date:
@@ -337,7 +304,7 @@ def batch_upload():
         # Build the error message, looping over the different errors
         error_message = ""
         for type in error_master.keys():
-            if len(error_master[type]['error_list']) > 0 : error_message += new_error_msg(type)
+            if len(error_master[type]['error_list']) > 0 : error_message += new_error_msg(type, error_master)
         
         # Get the total sum of errors
         error_count = 0
@@ -357,6 +324,43 @@ def batch_upload():
             3. Write expression to be returned (# of elements in list found under key 'error_list')
             4. Apply function using all the returned values (sum all the 'lengths')
         """
+
+        # Loop through payers and add the payer ID (if they are correct)
+        expenses_df['paid_by'].replace("(?i)you", app_current_user.getFirstName(), regex=True, inplace=True) # Change 'you' by the app user name
+
+        for index, expense in expenses_df.iterrows():
+            raw_payer_name = expense['paid_by']
+            if str.lower(raw_payer_name) == "you": # Set values if payer = 'you'
+                expenses_df.at[index,'paid_by'] = app_current_user.getFirstName() 
+                expenses_df.at[index,'payer_name'] = app_current_user.getFirstName()
+                expenses_df.at[index,'payer_id'] = app_current_user.getId()
+            else: 
+                for user in up_users.values():
+                    if user.final_name == raw_payer_name:
+                        if user.correct == "yes": # Payer matches a column which also matches a group member
+                            expenses_df.at[index,'payer_id'] = user['candidates'][0] # First element in the list 'candidate', which we know because correct = 'y'
+                            expenses_df.at[index,'payer_check'] = "correct"
+                        elif user.correct == "no": # Payer matches column, but col didn't match a group member
+                            expenses_df.at[index,'payer_id'] = nan
+                            expenses_df.at[index,'payer_check'] = "No match in group members"
+                    else: 
+                        continue # Move to next 
+                if "payer_id" not in expense.keys(): # If after checking all the members no match was found, record this result
+                    expenses_df.at[index,'payer_id'] = nan
+                    expenses_df.at[index,'payer_check'] = "No match in column names"
+
+        """ 
+        Structure of dicts in users_raw
+        users_raw = [
+            {
+                'raw_name' : "Jvier" ,
+                'candidates' : [1245, 1765]
+            }
+            (...)
+        ]
+        """        
+
+
 
         # Pass dataframe to a list of dicts
         expenses = expenses_df.to_dict('records')
@@ -417,13 +421,13 @@ def batch_upload():
                 for member in group['members'] 
                 if expense[member.getFirstName() + "_shares"]["share_owed"] != "") 
 
-            print("Expense" + str(expense['id']) + ": " + str(indiv_shares_added))
+            #print("Expense" + str(expense['id']) + ": " + str(indiv_shares_added))
                                     
             if indiv_shares_added != expense['amount'] and math.isnan(indiv_shares_added) == False:
                 diff = expense['amount'] - indiv_shares_added
                 user_share_owed = expense[app_current_user.getFirstName() + '_shares']['share_owed']
-                print("Total shares: " + str(expense[app_current_user.getFirstName() + '_shares']['share_owed']))
-                print("Diff: " + str(diff))
+                #print("Total shares: " + str(expense[app_current_user.getFirstName() + '_shares']['share_owed']))
+                #print("Diff: " + str(diff))
                 if user_share_owed!= '':
                     user_share_owed += diff
             
@@ -440,6 +444,19 @@ def batch_upload():
         ]
         """
 
+        # Convert up_users back to a dict of dicts so it can be used
+        users_raw = {}
+        for user in up_users:
+            # print(up_users[user])
+            # print(up_users[user].__dict__)
+            todict = vars(up_users[user])
+            obj = up_users[user]
+            users_raw[user] = {
+                'orig_name' : obj.orig_name,
+                'final_id' : obj.final_id,
+                'final_name' : obj.final_name
+                }
+        
         if error_count == 0:
             # Store the dict in session and redirect to editing site
             session['expenses_upload'] = expenses
@@ -449,10 +466,12 @@ def batch_upload():
 
             # Redirect to the website for editing (edit_upload.html), passing on the data on expenses for display
             # Consider improving this view with using pivottable.js (https://github.com/nicolaskruchten/jupyter_pivottablejs)
-            return render_template("upload_edit.html", file_valid = "yes", group_id = group['id'], group_name = group['name'], group = group, users_raw = users_raw, expenses = expenses, error_master = error_master)
+            # Making classes available in Jinja2 (https://stackoverflow.com/questions/29257476/how-can-i-make-a-class-variable-available-to-jinja2-templates-with-flask)
+            
+            return render_template("upload_edit.html", file_valid = "yes", group = group, users_raw = users_raw, expenses = expenses, error_master = error_master)
         else:
             flash(error_message)
-            return render_template("upload_edit.html", file_valid = "no",  group_id = group['id'], group_name = group['name'], group = group, users_raw = users_raw, expenses = expenses, error_master = error_master)
+            return render_template("upload_edit.html", file_valid = "no",  group = group, users_raw = users_raw, expenses = expenses, error_master = error_master)
 
 # TBD: Depending on the process result
     # If the process fails: Show errors

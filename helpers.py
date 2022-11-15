@@ -69,3 +69,40 @@ def usd(value):
     """Format value as USD."""
     return f"${value:,.2f}"
 
+# Function to add an element to error list
+def add_to_error_list(error_type : str, element_id : int, error_master : dict ): #error_master = error_master means by default we import this dict with the same name
+    """ Add an element to error list, indicating error type and element ID """
+    error_master[error_type]['error_list'].append(str(element_id))
+    return element_id 
+
+# Function to build the error message
+def new_error_msg(error_type : str, error_master : dict):
+    """ Adds error type (error description + list of items) to the overall error_message"""
+    error_dict = error_master[error_type]
+    if error_dict['element_type'] == 'general':
+        message = error_dict['message']+ ".\n"
+    else:
+        error_list_str = ', '.join(error_dict['error_list'])
+        message = error_dict['message'] + " (" + error_dict['element_type'] + " " + error_list_str + ").\n"
+    return message
+
+def map_sw_info(list_names : list, up_users):
+    list_ids = [member.final_id for member in up_users]
+        
+
+def label_race (row):
+   if row['eri_hispanic'] == 1 :
+      return 'Hispanic'
+   if row['eri_afr_amer'] + row['eri_asian'] + row['eri_hawaiian'] + row['eri_nat_amer'] + row['eri_white'] > 1 :
+      return 'Two Or More'
+   if row['eri_nat_amer'] == 1 :
+      return 'A/I AK Native'
+   if row['eri_asian'] == 1:
+      return 'Asian'
+   if row['eri_afr_amer']  == 1:
+      return 'Black/AA'
+   if row['eri_hawaiian'] == 1:
+      return 'Haw/Pac Isl.'
+   if row['eri_white'] == 1:
+      return 'White'
+   return 'Other'

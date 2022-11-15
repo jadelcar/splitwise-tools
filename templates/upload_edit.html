@@ -10,47 +10,48 @@
 <script src="//code.jquery.com/jquery-1.11.1.min.js"></script>
 <!------ Include the above in your HEAD tag ---------->
 
+<div class="table-responsive">
+The following expenses will be uploaded to group '{{ group['name'] }}' [ID: {{ group['id'] }}].
+
 <div class="container">
-    <div class="row col-md-8 custyle">
-    The following expenses will be uploaded to group '{{ group_name }}' [ID: {{ group_id }}].
-    <table class="table table-striped custab">
-    <thead>
-        <tr>
-            <th>ID</th>
-            <th>Description</th>
-            <th>Date</th>
-            <th>Amount</th>            
-            <th>Currency</th>            
-            <th>Paid by</th>            
-            <th>All equal?</th>            
-            <th>Type of split</th>
-            {% for raw_user in users_raw %}
-                <th>{{ raw_user.name }} [{{ raw_user.id }}]</th>
-            {% endfor %}
-            <th>Total shares</th>
-            <!-- <th class="text-center">Actions</th> -->
-        </tr>
-    </thead>
-            {% for expense in expenses %}
+        <table class="table table-striped .w-auto text-left">
+        <thead>
             <tr>
-                <td>{{ expense.id }}</td>
-                <td {% if expense.id | string in error_master.descr.error_list %} class= "text-danger"{% endif %}>{{ expense.description }}</td>
-                <td>{{ expense.date.date()}}</td>
-                <td>{{ "%0.2f" | format(expense.amount | float) }}</td>
-                <td>{{ expense.currency }}</td>
-                <td>{{ expense.paid_by }}</td>
-                <td>{{ expense.all_equal }}</td>
-                <td {% if expense.id | string in error_master.split_type_unsupported.error_list %} class= "text-danger"{% endif %}>{{ expense.type_split }}</td>
+                <th>ID</th>
+                <th>Description</th>
+                <th class = "col-md-2">Date</th>
+                <th>Amount</th>            
+                <th>Currency</th>            
+                <th>Paid by</th>            
+                <th>All equal?</th>            
+                <th>Type of split</th>
                 {% for raw_user in users_raw %}
-                    {% set raw_username = raw_user.name %}
-                    {% set dict_name = raw_username ~ "_shares" %}
-                    <td>{{ "%0.2f" | format(expense[raw_username] | float) }} 
-                        ({{ "%0.2f" | format(expense[dict_name].share_owed | float) }})</td>
+                    <th>{{ users_raw[raw_user]['final_name'] }} [{{ users_raw[raw_user]['final_id'] }}]</th>
                 {% endfor %}
-                <td>{{expense.total_shares}}</td>
-            </tr> 
-            {% endfor %}
-    </table>
+                <th>Total shares</th>
+                <!-- <th class="text-center">Actions</th> -->
+            </tr>
+        </thead>
+                {% for expense in expenses %}
+                <tr>
+                    <td>{{ expense.id }}</td>
+                    <td {% if expense.id | string in error_master.descr.error_list %} class= "text-danger"{% endif %} >{{ expense.description }}</td>
+                    <td>{{ expense.date.date()}}</td>
+                    <td>{{ "%0.2f" | format(expense.amount | float) }}</td>
+                    <td>{{ expense.currency }}</td>
+                    <td>{{ expense.paid_by }}</td>
+                    <td>{{ expense.all_equal }}</td>
+                    <td {% if expense.id | string in error_master.split_type_unsupported.error_list %} class= "text-danger"{% endif %}>{{ expense.type_split }}</td>
+                    {% for raw_user in users_raw %}
+                        {% set raw_username = users_raw[raw_user]['orig_name'] %}
+                        {% set dict_name = raw_username ~ "_shares" %}
+                        <td>{{ "%0.2f" | format(expense[raw_username] | float) }} <br>
+                            ({{ "%0.2f" | format(expense[dict_name].share_owed | float) }})</td>
+                    {% endfor %}
+                    <td {% if expense.id | string in error_master.shares_no_addup.error_list %} class= "text-danger"{% endif %}>{{expense.total_shares}}</td>
+                </tr> 
+                {% endfor %}
+        </table>
     </div>
 </div>
 {% if file_valid == "yes" %}
