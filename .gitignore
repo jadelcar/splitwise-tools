@@ -3,12 +3,13 @@
 *.pyc
 .vscode/
 flask_session/
-flask_session/*
 test/
-instance/database.db
-test/
-
-node_modules/*
+instance/
+node_modules/
+env/
+package-lock.json
+package.json
+*.code-workspace
 node_modules/
 
 # Byte-compiled / optimized / DLL files
@@ -61,18 +62,3 @@ coverage.xml
 
 # Sphinx documentation
 docs/_build/
-
-# Specific files
-__pycache__/app.cpython-38.pyc
-__pycache__/helpers.cpython-38.pyc
-flask_session/2029240f6d1128be89ddc32729463129
-
-python_sandbox.py
-__pycache__/app.cpython-38.pyc
-__pycache__/helpers.cpython-38.pyc
-
-__pycache__/app.cpython-38.pyc
-__pycache__/helpers.cpython-38.pyc
-instance/database.db
-flask_session/2029240f6d1128be89ddc32729463129
-python_sandbox.ipynb
