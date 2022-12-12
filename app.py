@@ -36,8 +36,6 @@ Session(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db' # three '/' is relative path, 4 would be aboslute
 db = SQLAlchemy(app)
 
-
-
 #Import classes and helper functions
 from helpers import *
 from classes import *
@@ -45,9 +43,6 @@ from classes import *
 @app.context_processor
 def include_UpMember_class():
     return {'UpMember': UpMember}
-
-# app.add_template_global(UpExpense, 'UpExpense')
-# app.add_template_global(UpMember, 'UpMember')
 
 
 """
@@ -98,15 +93,6 @@ class User(db.Model):
     def __repr__(self):
         return '<You were assigned ID %r>' % self.id
 
-
-# @app.after_request
-# def after_request(response):
-#     """Ensure responses aren't cached"""
-#     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-#     response.headers["Expires"] = 0
-#     response.headers["Pragma"] = "no-cache"
-#     return response
-
 @app.route("/")
 def home():
     return render_template("home.html")
@@ -116,13 +102,10 @@ def groups():
     """Show a list of groups"""
     if request.method == 'POST':
         pass
-    #If method is 'GET'
     else:
         # Fetch groups
         if 'access_token' not in session:
             return redirect(url_for("home"))
-        # sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
-        # sObj.setAccessToken(session['access_token'])
         sObj = get_access_token() # Helper function
         groups = sObj.getGroups()
     return render_template('groups.html', groups=groups)
@@ -168,8 +151,6 @@ def batch_upload():
             )
 
         # Import user file 
-            # See https://flask.palletsprojects.com/en/2.2.x/quickstart/#file-uploads 
-            # See https://flask.palletsprojects.com/en/2.2.x/api/#flask.Request.files
         file = request.files['batch_expenses_file'] 
         expenses_df = pd.read_excel(file)
         
@@ -442,7 +423,7 @@ def batch_upload():
                 'Pedro' : 30
             }
         ]
-        
+
         """
 
         # Convert up_users back to a dict of dicts so it can be used
@@ -639,11 +620,11 @@ def authorize():
     # Get parameters needed to obtain the access token
     sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
     
-    current_user = User.query.filter_by(id=session["user_id"])
+    current_user = User.query.filter_by(id = session["user_id"])
     rows = [u.__dict__ for u in current_user]
     user_secret = rows[0]['split_secret']
     
-    access_token = sObj.getAccessToken(oauth_token, user_secret,oauth_verifier)
+    access_token = sObj.getAccessToken(oauth_token, user_secret, oauth_verifier)
     session['access_token'] = access_token
     return render_template("authorize_success.html") # 'url_for' generates a url given the input (in this case, an html file).
 
