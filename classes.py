@@ -1,25 +1,26 @@
 from splitwise import Splitwise
 from splitwise.expense import Expense
-from splitwise.user import ExpenseUser
+from splitwise.user import User, ExpenseUser
+from splitwise.group import Group
 
 
-class Group:
-    def __init__(self):
-        self.id = 0
-        self.name = ''
-        self.members = []
-    def add_member(self, new_member):
-        self.members.append(new_member)
-    def get_member_names(self):
-        "Return a list with member names"
-        member_list = [member.name for member in self.members]
-        return member_list
-    def get_member_ids(self):
-        member_list = [member.id for member in self.members]
-        return member_list
-    def get_member_dict(self):
-        member_dict = [{'id': member.id, 'name' : member.name} for member in self.members]
-        return member_dict
+# class Group:
+#     def __init__(self):
+#         self.id = 0
+#         self.name = ''
+#         self.members = []
+#     def add_member(self, new_member):
+#         self.members.append(new_member)
+#     def get_member_names(self):
+#         "Return a list with member names"
+#         member_list = [member.name for member in self.members]
+#         return member_list
+#     def get_member_ids(self):
+#         member_list = [member.id for member in self.members]
+#         return member_list
+#     def get_member_dict(self):
+#         member_dict = [{'id': member.id, 'name' : member.name} for member in self.members]
+#         return member_dict
 
 class Member:
     def __init__(self, id, name):
@@ -34,6 +35,14 @@ class UpMember:
         self.final_id = final_id
         self.final_name = final_name
         self.correct = correct
+    # def find_match_sw(self, group: Group):
+    #     """ Find matching """
+    #     for member in group.getMembers():
+    #         member_full_name = member.getFirstName() + " " + member.getLastName()
+    #         if self.orig_name == member_full_name
+    #         User.fried
+    #         Splitwise.user.Friend.
+    
     def add_candidate(self, candidate_id : int, candidate_name : str):
         if not (isinstance(candidate_id, int)): TypeError("Candidate ID must be int")
         if not (isinstance(candidate_name, str)): TypeError("Candidate name must be str")

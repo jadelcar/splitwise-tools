@@ -11,6 +11,7 @@ package-lock.json
 package.json
 *.code-workspace
 node_modules/
+.pytest_cache/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -62,3 +63,4 @@ coverage.xml
 
 # Sphinx documentation
 docs/_build/
+static/assets/group_templates/

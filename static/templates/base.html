@@ -13,10 +13,9 @@
         
         <!-- Import our own css file -->
         <!-- In href: Get the url for the top-level folder 'static' and then the rest of the direction filename 'main.css' with extension css -->
-        <!-- <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}"> -->
-        <!-- https://favicon.io/emoji-favicons/money-bag/ -->
-        <link href="/static/assets/favicon.ico" rel="icon">
-        <link href="/static/css/main.css" rel="stylesheet">
+        <link href="{{ url_for('static', path='assets/favicon.ico') }}" rel="icon">
+        <link href="{{ url_for('static', path='css/main.css') }}" rel="stylesheet">
+
 
         <title>Splitwise tools: {% block title %}{% endblock %}</title>
 
@@ -31,38 +30,23 @@
                     <span class="navbar-toggler-icon"></span>
                 </button>
                 <div class="collapse navbar-collapse" id="navbar">
-                    {% if session["user_id"] and session["access_token"] %}
+                    {% if request.session["access_token"] %}
                         <ul class="navbar-nav me-auto mt-2">
                             <li class="nav-item"><a class="nav-link" href="/groups">Groups</a></li>
                             <li class="nav-item"><a class="nav-link" href="/batch_upload">Batch upload</a></li>
                         </ul>
                         <ul class="navbar-nav ms-auto mt-2">
                             <li class="nav-item"><a class="nav-link" href="/logout">Log Out</a></li>
-                            <li class="nav-item"><a class="nav-link">User: {{ session["user_name"] }} </a></li>
+                            <li class="nav-item"><a class="nav-link">User: {{ request.session["user_fname"] }} </a></li>
                         </ul>
-                    {% elif session["user_id"] and not session["access_token"] %}
-                    <ul class="navbar-nav ms-auto mt-2">
-                        <li class="nav-item"><a class="nav-link" href="/login_sw">Authorize Splitwise</a></li>
-                        <li class="nav-item"><a class="nav-link" href="/logout">Log out</a></li>
-                        <li class="nav-item"><a class="nav-link">User: {{ session["user_name"] }} </a></li>
-                    </ul>                    
-                    {% else %}
+                    {% elif request.session["access_token"] %}
                         <ul class="navbar-nav ms-auto mt-2">
-                            <li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
-                            <li class="nav-item"><a class="nav-link" href="/login_app">Log In</a></li>
+                            <li class="nav-item"><a class="nav-link" href="/login_sw">Connect to Splitwise</a></li>
                         </ul>
                     {% endif %}
                 </div>
             </div>
         </nav>
-
-        {% if get_flashed_messages() %}
-            <header>
-                <div class="alert alert-primary mb-0 text-center" style="white-space: pre-line" role="alert">
-                    {{ get_flashed_messages() | join(" ") }}
-                </div>
-            </header>
-        {% endif %}
 
         <main class="container-fluid py-5 text-center">
             {% block body %}{% endblock %}
