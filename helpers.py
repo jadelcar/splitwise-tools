@@ -77,7 +77,7 @@ As we identify errors, we populate the dicts with function 'add_error' and build
 """
 
 
-def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group_members: list):
+def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: Group):
     """ Describe all errors in the file"""
     
     def add_to_error_list(error_type : str, element_id : int):
@@ -89,10 +89,10 @@ def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group_m
         """ Adds error type (error description + list of items) to the overall error_message"""
         error_dict = error_master[error_type]
         if error_dict['element_type'] == 'general':
-            message = error_dict['message']+ ".\n"
+            message = error_dict['message']+ "."
         else:
             error_list_str = ', '.join(error_dict['error_list'])
-            message = error_dict['message'] + " (" + error_dict['element_type'] + " " + error_list_str + ").\n"
+            message = error_dict['message'] + " (" + error_dict['element_type'] + " " + error_list_str + ")."
         return message
 
     # Initialize error list for each type of error
@@ -102,47 +102,44 @@ def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group_m
     for descr in ERROR_MASTER.keys(): 
         errors[str(descr)]['error_list'] = [] 
     
+    # File-level errors
     # Error 1: Friend names don't match in the two sheets
-    for member_name in expenses_df.filter(regex='^_', axis=1):
-        if member_name not in members_df['Name']:
-            add_to_error_list(error_type = "group_member", element_id = member_name)
+    list_expenses = [m[1:] for m in expenses_df.filter(regex='^_', axis=1)] # Get list of column names starting with "_", but removing it
+    list_expenses.sort()
+    list_members = members_df['Name'].values.tolist()
+    list_members.sort()
+    differences = set(list_expenses) ^ set(list_members) 
+    for diff in differences:
+        add_to_error_list(error_type = "group_member", element_id = diff)
+    # for member_name in list(expenses_df.filter(regex='^_', axis=1)):
+    #     if member_name[1:] not in members_df['Name'].values:
+    #         add_to_error_list(error_type = "group_member", element_id = member_name[1:])
 
     # Error 2: Number of friends in file is different than total group members
-    if len(members_df['Name']) != len(group_members) : add_to_error_list("n_members", 1, errors)
+    if len(members_df['Name']) != len(group.members) : add_to_error_list("n_members", 1, errors)
 
-    # Error 3: Description length > max 
-    for id, descr in zip(expenses_df["ID"], expenses_df["Description"]):
-        if len(descr) > EXP_DESCR_MAX_CHARS: 
-            add_to_error_list("descr", id, errors)
-
-    # Error 4: Shares do not add up
-    cols_to_add = [col_name for col_name in expenses_df.filter(regex='^_', axis=1)] # List of column names we want to add up to calculate shares
-
-    # Add column with the sum of shares and compare with total amount
+    #Expense-level errors
     for i, row in expenses_df.iterrows():
-        if row['Split type'] == "amount" and total_shares != amount : 
-            add_to_error_list("shares_no_addup", id, errors)
-        elif type_split == "shares" and total_shares != 100 : 
-            add_to_error_list("shares_no_addup", id, errors)
-    for id, type_split, amount, total_shares in zip(expenses_df["ID"], expenses_df["Split type"], expenses_df["Amount"], expenses_df["Total Shares"]):
-        if type_split == "amount" and total_shares != amount : 
-            add_to_error_list("shares_no_addup", id, errors)
-        elif type_split == "shares" and total_shares != 100 : 
-            add_to_error_list("shares_no_addup", id, errors)
-    
-    # Error 5: Split type not supported
-    for id, type_split, all_equal in zip(expenses_df['ID'], expenses_df['Split type'], expenses_df['All equal']):
-        if type_split not in SPLIT_TYPES and all_equal != 'y': 
-            add_to_error_list("split_type_unsupported", id, errors)
+        # Error 3: Description length > max 
+        if len(row["Description"]) > EXP_DESCR_MAX_CHARS: 
+            add_to_error_list("descr", row['ID'])
 
-    # Date cannot be parsed (TBD)
-    # for date in df.date:
-    #     if is_date(date) == TRUE:
+        # Error 4: Shares do not add up
+        # cols_to_add = [col_name for col_name in expenses_df.filter(regex='^_', axis=1)]
+        if row['Split type'] == "amount" and row['Total Shares'] != row['Amount'] : 
+            add_to_error_list("shares_no_addup", row['ID'])
+        elif row['Split type'] == "shares" and row['Total Shares'] != 100 : 
+            add_to_error_list("shares_no_addup", row['ID'])
+
+        
+        # Error 5: Split type not supported
+        if row["Split type"] not in SPLIT_TYPES and row["All equal"] != 'y': 
+            add_to_error_list("split_type_unsupported", row['ID'])
 
     # Build the error message, looping over the different errors
-    error_message = ""
+    error_messages = []
     for type in errors.keys():
-        if len(errors[type]['error_list']) > 0 : error_message += new_error_msg(type, errors)
+        if len(errors[type]['error_list']) > 0 : error_messages.append(new_error_msg(type, errors))
     
     # Get the total sum of errors
     error_count = 0
@@ -150,7 +147,7 @@ def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group_m
         error_count += len(type['error_list'])
     
     # Return
-    return error_message, error_count
+    return errors, error_messages, error_count
 
 
 

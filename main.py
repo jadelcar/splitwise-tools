@@ -1,19 +1,24 @@
 import uvicorn
+import jinja2
 # from typing import Union, List
 
-from fastapi import FastAPI, HTTPException, Depends, Form
+from fastapi import FastAPI, HTTPException, Depends, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+# from fastapi.templating import Jinja2Templates
 
 # from sqlalchemy import create_engine,  Boolean, Column, ForeignKey, Integer, String
 # from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 
-# from starlette.applications import Starlette
+from starlette.applications import Starlette
 from starlette.requests import Request
 # from starlette.routing import Route
 import starlette.status as status
+from starlette_core.messages import message
+from starlette_admin import config as admin_config
+from starlette_core.templating import Jinja2Templates
+
 
 # from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -37,6 +42,7 @@ from decimal import *
 from tempfile import mkdtemp
 import config as Config
 import pandas as pd
+import numpy as np
 # from thefuzz import fuzz
 import math
 from openpyxl import Workbook
@@ -100,8 +106,8 @@ def authorize(request: Request, oauth_token: str, oauth_verifier: str):
     # Store user data and tokens in session
     request.session['access_token'] = access_token
     current_user = sObj.getCurrentUser()
-    request.session['user_id'] = current_user.getId()
-    request.session['user_fname'] = current_user.getFirstName()
+    request.session['user_id'] = current_user.id
+    request.session['user_fname'] = current_user.first_name
     return templates.TemplateResponse("authorize_success.html", {"request": request})
 
 @app.get("/logout")
@@ -120,174 +126,87 @@ def batch_upload_show_form(request: Request):
 
 
 @app.post("/batch_upload_post", response_class = HTMLResponse)
-def batch_upload_process(request: Request,
-group_for_upload = Form(), 
-batch_expenses_file = Form()):
+def batch_upload_process(request: Request, group_for_upload = Form(), batch_expenses_file : UploadFile = File(...)):
     sObj = get_access_token(request)
     app_current_user = sObj.getCurrentUser()
 
     # Fetch group info
     group = sObj.getGroup(group_for_upload)
     group_dict = {
-        'id' : group.getId(), 
+        'id' : group.id, 
         'name' : group.getName(), 
         'members' :  group.getMembers()
     }
     
-    # Create a list of dictionaries with member data
-    group_members = [{'id' : member.getId() , 'fname' : member.getFirstName(), 'lname' : member.getLastName()} for member in group["members"]]
-
-    # Import user file 
-    expenses_df = pd.read_excel(batch_expenses_file, sheet_name = "Expenses")
-    members_df = pd.read_excel(batch_expenses_file, sheet_name = "Members")
-    cols_member_names = expenses_df.filter(regex='^_', axis=1)
-    expenses_df['Total Shares'] = expenses_df[cols_member_names].sum(axis = 1) # Sum all columns for members
-      
-    # Calculate share paid and owed by expense and user
-    def get_share_owed(expense, member_name):
-        # Share owed, depends on the type of split
-        indiv_cell_owed = expense[member_name] # fetch number under this member's column
-        if expense['all_equal'] == "y": # Default: Split equally among all group members
-            share_owed = expense['amount'] / len(group['members'])
-        else:
-            if expense["Split type"] == "share":
-                share_owed = round((indiv_cell_owed/100)*expense['amount'], 2) # e.g. share = 10 --> 0.1*amount
-            elif expense["Split type"] == "amount":
-                share_owed = indiv_cell_owed # e.g. share_owed for Javier is the value under column "_Javier"
-            elif expense["Split type"] == "equal":
-                members_to_split = 0
-                for member_inner in group['members']: 
-                    if expense[member_inner.getFirstName()] != '': members_to_split += 1 # Count how many members to split among
-                share_owed = round(expense['amount'] / members_to_split) # Get value from cell under the person's column
-        return Decimal(share_owed)
+    # Import and parse user file 
+    file = batch_expenses_file.file.read()
     
+    expenses_df = pd.read_excel(file, sheet_name = "Expenses")
+    cols_member_names = list(expenses_df.filter(regex='^_', axis=1))
+    expenses_df['Total Shares'] = expenses_df[cols_member_names].sum(axis = 1)
+    
+    members_df = pd.read_excel(file, sheet_name = "Members")
+    
+    members_in_cols = []
+    for member in expenses_df[cols_member_names].columns:
+        members_in_cols.append(
+            {
+                'name' : member[1:] ,
+                'id' :  members_df[members_df['Name'] == member[1:]]['ID'].values[0] # Search for name and return ID
+            })
+
+    # Calculate share owed and paid by each member
+    def get_share_owed(df, member_name):
+        """ Calculate share paid and owed by expense and user"""
+        # Share owed, depends on the type of split
+        if df['All equal'] == "y": # Default: Split equally among all group members
+            return df['Amount'] / len(group.members)
+        else:
+            if df["Split type"] == "share":
+                return round((df[member_name]/100)*df['Amount'], 2) # e.g. share = 10 --> 0.1*amount
+            elif df["Split type"] == "amount":
+                return df[member_name] # e.g. share_owed for Javier is the value under column "_Javier"
+            elif df["Split type"] == "equal":
+                members_to_split = df[cols_member_names].count()
+                return round(df['Amount'] / members_to_split) # Get value from cell under the person's column
+        
     for col_name in cols_member_names:
         # Share paid
-        expenses_df[f'{member}_share_paid'] = expenses_df["amount"] if expenses_df["paid_by"] == col_name[1:] else 0
-        
+        expenses_df[f'{col_name[1:]}_share_paid'] = np.where(expenses_df["Paid by"] == col_name[1:],  expenses_df['Amount'], 0)
+
         # Share owed
-        expenses_df[f'{member}_share_owed'] = get_share_owed(expense = expenses_df, member_name = col_name)
-
-            
-    # Calculate share owed
-
-
-
+        expenses_df[f'{col_name[1:]}_share_owed'] = expenses_df.apply(get_share_owed, axis = 1, member_name = f"_{col_name[1:]}")
 
     # Obtain error message
-    error_message, error_count = describe_errors(expenses_df, members_df, group_members)
+    errors, error_messages, error_count = describe_errors(expenses_df, members_df, group)
 
-    # Pass dataframe to a list of dicts
-    expenses = expenses_df.to_dict('records')
 
-    # Calculate share paid and owed for each user in each expense, and store in a dict within expense
-    for expense in expenses:
-        if expense["Split type"] in SPLIT_TYPES and expense['all_equal'] != "y":
-            for member in group['members']:
-                # Share paid: Full amount or zero (no support for several payers yet)
-                member_name = member.getFirstName()
-                member_id = member.getId()
-                if expense['paid_by'] == member_name : share_paid = expense['amount']
-                else: share_paid = 0
-                
-                # Share owed, depends on the type of split
-                indiv_cell_owed = expense[member_name] # fetch number under this member's column
-                if expense['all_equal'] == "y": # Default: Split equally among all group members
-                    share_owed = expense['amount'] / len(group['members'])
-                else:
-                    if expense["Split type"] == "share":
-                        share_owed = round((indiv_cell_owed/100)*expense['amount'], 2) # e.g. share = 10 --> 0.1*amount
-                    elif expense["Split type"] == "amount":
-                        share_owed = indiv_cell_owed # e.g. share_owed for Javier is the value under column "_Javier"
-                    elif expense["Split type"] == "equal":
-                        members_to_split = 0
-                        for member_inner in group['members']: 
-                            if expense[member_inner.getFirstName()] != '': members_to_split += 1 # Count how many members to split among
-                        share_owed = round(expense['amount'] / members_to_split) # Get value from cell under the person's column
-                
-                #Add the 'shares' dict to the corresponding key inside the expense
-                shares = {
-                    "user_id" : member_id ,
-                    "share_owed" : share_owed ,
-                    "share_paid" : share_paid
-                }
+    # Prepare context to be passed to template
+    expenses = expenses_df.to_dict('records')     # Pass dataframe to a list of dicts
 
-                expense[member_name + "_shares"] = shares # e.g. expense['javier_shares'] = {"share_owed" : 7.5, "share_paid" : 15}
-        else: 
-            #If paid_equal = y 
-            for member in group['members']:
-                member_name = member.getFirstName()
-                member_id = member.getId() 
-                if expense['paid_by'] == member_name : share_paid = expense['amount']
-                else: share_paid = 0
-                
-                shares = { 
-                    "user_id" : member_id ,
-                    "share_owed" : expense['amount'] / len(group['members']),
-                    "share_paid" : share_paid
-                }
-                expense[member_name + "_shares"] = shares
-        """
-        Ensure shares add up to the total amount by adding/substracting the difference from the uploading user (Since we are checking for errors, it should only be because of rounding and thus small)
-        """
-        # Add up the shares owed of all members in the expense: For this, loop over members, go to the expense and get the share owed, whtich is within a dict called after member name (expense[*MemberName*_shares]["share_owed"]). But only if there is a key called 'share_owed' within the dict(if "share_owed" in expense[*MemberName*_shares].keys()). Once you have this list of values, we sum them up
-        indiv_shares_added = sum(
-            expense[member.getFirstName() + "_shares"]["share_owed"] 
-            for member in group['members'] 
-            if expense[member.getFirstName() + "_shares"]["share_owed"] != "") 
-
-        #print("Expense" + str(expense['id']) + ": " + str(indiv_shares_added))
-                                
-        if indiv_shares_added != expense['amount'] and math.isnan(indiv_shares_added) == False:
-            diff = expense['amount'] - indiv_shares_added
-            user_share_owed = expense[app_current_user.getFirstName() + '_shares']['share_owed']
-            #print("Total shares: " + str(expense[app_current_user.getFirstName() + '_shares']['share_owed']))
-            #print("Diff: " + str(diff))
-            if user_share_owed!= '':
-                user_share_owed += diff
-        
-    """
-    expenses = [
-        {
-            'id' : 1
-            'description' : "Expenditure for..."
-            (...)
-            '_you' : 20
-            'Alberto' : 15
-            'Pedro' : 30
-        }
-    ]
-
-    """
-
-    # Convert up_users back to a dict of dicts so it can be used
-    users_raw = {}
-    for user in up_users:
-        # print(up_users[user])
-        # print(up_users[user].__dict__)
-        todict = vars(up_users[user])
-        obj = up_users[user]
-        users_raw[user] = {
-            'orig_name' : obj.orig_name,
-            'final_id' : obj.final_id,
-            'final_name' : obj.final_name
-            }
+    group_dict = {     # Transform group data into dictionary so it can be used
+        "name": group.name,
+        "id": group.id,
+        "members" : [(member.id, member.first_name, member.last_name) for member in group.members]
+        }    
     
+    context = {
+        "request" : request,
+        "group" : group_dict, 
+        "members_in_cols" : members_in_cols, 
+        "expenses" : expenses,
+        "errors" : errors,
+        "error_messages" : error_messages,
+    }
+    
+    # Return a table with expenses
     if error_count == 0:
-        # Store the dict in session and redirect to editing site
-        request.session['expenses_upload'] = expenses
-        request.session['expenses_upload_group_members'] = group_members
-        request.session['expenses_upload_group_id'] = group['id']
-        request.session['expenses_upload_group_name'] = group['name']
-
-        # Redirect to the website for editing (edit_upload.html), passing on the data on expenses for display
-        # Consider improving this view with using pivottable.js (https://github.com/nicolaskruchten/jupyter_pivottablejs)
-        # Making classes available in Jinja2 (https://stackoverflow.com/questions/29257476/how-can-i-make-a-class-variable-available-to-jinja2-templates-with-flask)
-        
-        return templates.TemplateResponse("upload_edit.html", file_valid = "yes", group = group, users_raw = users_raw, expenses = expenses, error_master = error_master)
+        context['file_valid'] = 'yes'
+        request.session['expenses_to_upload'] = expenses
+        return templates.TemplateResponse("upload_edit.html", context)
     else:
-        flash(error_message)
-        return render_template("upload_edit.html", file_valid = "no",  group = group, users_raw = users_raw, expenses = expenses, error_master = error_master)
+        context['file_valid'] = 'no'
+        return templates.TemplateResponse("upload_edit.html", context)
 
 """       ----------           Retrieve data       -----------            """
 
