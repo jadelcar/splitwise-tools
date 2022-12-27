@@ -1,5 +1,6 @@
 import uvicorn
 import jinja2
+import traceback
 # from typing import Union, List
 
 from fastapi import FastAPI, HTTPException, Depends, Form, UploadFile, File
@@ -56,7 +57,7 @@ from classes import *
 from constants import *
 
 # Create app
-app = FastAPI()
+app = FastAPI(debug=True)
 
 # Configure database
 models.Base.metadata.create_all(bind = engine) # Creates DB if not yet created
@@ -129,7 +130,6 @@ def batch_upload_show_form(request: Request):
 def batch_upload_process(request: Request, group_for_upload = Form(), batch_expenses_file : UploadFile = File(...)):
     sObj = get_access_token(request)
     app_current_user = sObj.getCurrentUser()
-
     # Fetch group info
     group = sObj.getGroup(group_for_upload)
     group_dict = {
@@ -180,7 +180,6 @@ def batch_upload_process(request: Request, group_for_upload = Form(), batch_expe
     # Obtain error message
     errors, error_messages, error_count = describe_errors(expenses_df, members_df, group)
 
-
     # Prepare context to be passed to template
     expenses = expenses_df.to_dict('records')     # Pass dataframe to a list of dicts
 
@@ -198,11 +197,10 @@ def batch_upload_process(request: Request, group_for_upload = Form(), batch_expe
         "errors" : errors,
         "error_messages" : error_messages,
     }
-    
+
     # Return a table with expenses
     if error_count == 0:
         context['file_valid'] = 'yes'
-        request.session['expenses_to_upload'] = expenses
         return templates.TemplateResponse("upload_edit.html", context)
     else:
         context['file_valid'] = 'no'

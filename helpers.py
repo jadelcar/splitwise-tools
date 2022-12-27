@@ -64,6 +64,13 @@ def usd(value):
     """Format value as USD."""
     return f"${value:,.2f}"
 
+def group_to_dict(group: Group):
+    """Returns a group converted to dict, with elements ID, Name and Members (list of tuples)"""
+    return {
+        "id": group.id,
+        "name": group.name,
+        "members" : [(member.id, member.first_name, member.last_name) for member in group.members]
+    }
 
 """
 Verification of file
@@ -75,6 +82,7 @@ error_master is a dict of dicts. Each dict refers to one type of error (descript
 
 As we identify errors, we populate the dicts with function 'add_error' and build the error message progressively with function 'add_to_error_msg'.
 """
+
 
 
 def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: Group):
