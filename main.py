@@ -1,6 +1,7 @@
 import uvicorn
 import jinja2
 import traceback
+import json
 # from typing import Union, List
 
 from fastapi import FastAPI, HTTPException, Depends, Form, UploadFile, File
@@ -144,7 +145,7 @@ def batch_upload_process(request: Request, group_for_upload = Form(), batch_expe
     expenses_df = pd.read_excel(file, sheet_name = "Expenses")
     cols_member_names = list(expenses_df.filter(regex='^_', axis=1))
     expenses_df['Total Shares'] = expenses_df[cols_member_names].sum(axis = 1)
-    
+    # expenses_df['Date'] = pd.to_datetime(expenses_df['Date']).dt.date
     members_df = pd.read_excel(file, sheet_name = "Members")
     
     members_in_cols = []
@@ -181,22 +182,33 @@ def batch_upload_process(request: Request, group_for_upload = Form(), batch_expe
     errors, error_messages, error_count = describe_errors(expenses_df, members_df, group)
 
     # Prepare context to be passed to template
-    expenses = expenses_df.to_dict('records')     # Pass dataframe to a list of dicts
+    request.session['expenses_to_upload'] = expenses_df.to_json(orient = 'records')
+    # def default(obj):
+    #     if isinstance(obj, (datetime.date, datetime.datetime)):
+    #         return obj.isoformat()
 
-    group_dict = {     # Transform group data into dictionary so it can be used
-        "name": group.name,
-        "id": group.id,
-        "members" : [(member.id, member.first_name, member.last_name) for member in group.members]
-        }    
+    # print("Employee JSON Data")
+    # print(json.dumps(employee, default=default))
+    
+    # try:
+    #     request.session['expenses_to_upload'] = json.dumps(expenses, indent = 4) 
+    # except Exception:
+    #     print(traceback.format_exc())
+    # group_dict = {     # Transform group data into dictionary so it can be used
+    #     "name": group.name,
+    #     "id": group.id,
+    #     "members" : [(member.id, member.first_name, member.last_name) for member in group.members]
+    #     }    
     
     context = {
         "request" : request,
-        "group" : group_dict, 
+        "group" : group_to_dict(group), 
         "members_in_cols" : members_in_cols, 
-        "expenses" : expenses,
+        "expenses" : expenses_df.to_dict('records'),
         "errors" : errors,
         "error_messages" : error_messages,
     }
+    
 
     # Return a table with expenses
     if error_count == 0:
