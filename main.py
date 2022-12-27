@@ -183,22 +183,6 @@ def batch_upload_process(request: Request, group_for_upload = Form(), batch_expe
 
     # Prepare context to be passed to template
     request.session['expenses_to_upload'] = expenses_df.to_json(orient = 'records')
-    # def default(obj):
-    #     if isinstance(obj, (datetime.date, datetime.datetime)):
-    #         return obj.isoformat()
-
-    # print("Employee JSON Data")
-    # print(json.dumps(employee, default=default))
-    
-    # try:
-    #     request.session['expenses_to_upload'] = json.dumps(expenses, indent = 4) 
-    # except Exception:
-    #     print(traceback.format_exc())
-    # group_dict = {     # Transform group data into dictionary so it can be used
-    #     "name": group.name,
-    #     "id": group.id,
-    #     "members" : [(member.id, member.first_name, member.last_name) for member in group.members]
-    #     }    
     
     context = {
         "request" : request,
