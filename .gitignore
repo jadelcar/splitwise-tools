@@ -12,6 +12,8 @@ package.json
 *.code-workspace
 node_modules/
 .pytest_cache/
+docs/
+app.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
