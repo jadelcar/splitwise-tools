@@ -61,13 +61,13 @@ The following expenses will be uploaded to group '{{ group['name'] }}' [ID: {{ g
                         <td>{{ "%0.2f" | format(expense[col_name] | float) }} <br>
                             ({{ "%0.2f" | format(expense[share_owed] | float) }})</td>
                     {% endfor %}
-                    <td {% if expense['ID'] | string in errors['shares_no_addup']['error_list'] %} class= "text-danger"{% endif %}>{{expense['Total shares']}}</td>
+                    <td {% if expense['ID'] | string in errors['shares_no_addup']['error_list'] %} class= "text-danger"{% endif %}>{{expense['Total Shares']}}</td>
                 </tr> 
                 {% endfor %}
         </table>
     </div>
 </div>
-{% if file_valid == "yes" %}
+{% if file_valid == True %}
     <form action="/push_expenses" method="post" >
         <button class="btn btn-primary" type="submit">Upload</button>
     </form>

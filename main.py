@@ -1,25 +1,25 @@
 import uvicorn
-import jinja2
-import traceback
+# import jinja2
+# import traceback
 import json
+import random
 # from typing import Union, List
 
 from fastapi import FastAPI, HTTPException, Depends, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-# from fastapi.templating import Jinja2Templates
+from fastapi.requests import Request
 
 # from sqlalchemy import create_engine,  Boolean, Column, ForeignKey, Integer, String
 # from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship, Session
+from sqlalchemy.orm import Session, sessionmaker, relationship
 
 from starlette.applications import Starlette
-from starlette.requests import Request
-# from starlette.routing import Route
 import starlette.status as status
 from starlette_core.messages import message
-from starlette_admin import config as admin_config
 from starlette_core.templating import Jinja2Templates
+# from starlette.routing import Route
+# from starlette_admin import config as admin_config
 
 
 # from starlette.middleware import Middleware
@@ -31,27 +31,20 @@ from sql_app import crud, models, schemas
 
 # from werkzeug.security import check_password_hash, generate_password_hash
 
-from jinja2 import pass_context
+# from jinja2 import pass_context
 
 from splitwise import Splitwise
 from splitwise.expense import Expense
 from splitwise.user import ExpenseUser
 
 
-# from cmath import nan
-# from datetime import datetime
 from decimal import *
 from tempfile import mkdtemp
 import config as Config
 import pandas as pd
 import numpy as np
-# from thefuzz import fuzz
-import math
 from openpyxl import Workbook
 from openpyxl.styles import Font, Border, Side
-
-
-# import re
 
 from helpers import *
 from classes import *
@@ -127,17 +120,12 @@ def batch_upload_show_form(request: Request):
     return templates.TemplateResponse("batch_upload.html", {"request": request, "groups" : groups})
 
 
-@app.post("/batch_upload_post", response_class = HTMLResponse)
+@app.post("/batch_upload_process", response_class = HTMLResponse)
 def batch_upload_process(request: Request, group_for_upload = Form(), batch_expenses_file : UploadFile = File(...)):
     sObj = get_access_token(request)
     app_current_user = sObj.getCurrentUser()
     # Fetch group info
     group = sObj.getGroup(group_for_upload)
-    group_dict = {
-        'id' : group.id, 
-        'name' : group.getName(), 
-        'members' :  group.getMembers()
-    }
     
     # Import and parse user file 
     file = batch_expenses_file.file.read()
@@ -145,31 +133,32 @@ def batch_upload_process(request: Request, group_for_upload = Form(), batch_expe
     expenses_df = pd.read_excel(file, sheet_name = "Expenses")
     cols_member_names = list(expenses_df.filter(regex='^_', axis=1))
     expenses_df['Total Shares'] = expenses_df[cols_member_names].sum(axis = 1)
-    # expenses_df['Date'] = pd.to_datetime(expenses_df['Date']).dt.date
     members_df = pd.read_excel(file, sheet_name = "Members")
     
+    # List with members entered in columns with their respective ID
     members_in_cols = []
     for member in expenses_df[cols_member_names].columns:
         members_in_cols.append(
             {
                 'name' : member[1:] ,
-                'id' :  members_df[members_df['Name'] == member[1:]]['ID'].values[0] # Search for name and return ID
+                'id' :  int(members_df[members_df['Name'] == member[1:]]['ID'].values[0]) # Search in column'Name' of members_df and return the column 'ID'
             })
 
-    # Calculate share owed and paid by each member
-    def get_share_owed(df, member_name):
-        """ Calculate share paid and owed by expense and user"""
-        # Share owed, depends on the type of split
-        if df['All equal'] == "y": # Default: Split equally among all group members
-            return df['Amount'] / len(group.members)
+    # Calculate share owed and paid for a given member
+    def get_share_owed(row, member_name):
+        """ Calculate share owed for a given expense (row) and user"""
+        if row['All equal'] == "y": # Default: Split equally among all group members
+            return row['Amount'] / len(group.members)
+        elif pd.isna(row[member_name]):
+            return 0
         else:
-            if df["Split type"] == "share":
-                return round((df[member_name]/100)*df['Amount'], 2) # e.g. share = 10 --> 0.1*amount
-            elif df["Split type"] == "amount":
-                return df[member_name] # e.g. share_owed for Javier is the value under column "_Javier"
-            elif df["Split type"] == "equal":
-                members_to_split = df[cols_member_names].count()
-                return round(df['Amount'] / members_to_split) # Get value from cell under the person's column
+            if row["Split type"] == "share":
+                return round((row[member_name]/100)*row['Amount'], 2) # e.g. share = 10 --> 0.1*amount
+            elif row["Split type"] == "amount":
+                return row[member_name] # e.g. share_owed for Javier is the value under column "_Javier"
+            elif row["Split type"] == "equal":
+                members_to_split = row[cols_member_names].count() # Count members participating in this expense
+                return round(row['Amount'] / members_to_split, 2)
         
     for col_name in cols_member_names:
         # Share paid
@@ -178,12 +167,34 @@ def batch_upload_process(request: Request, group_for_upload = Form(), batch_expe
         # Share owed
         expenses_df[f'{col_name[1:]}_share_owed'] = expenses_df.apply(get_share_owed, axis = 1, member_name = f"_{col_name[1:]}")
 
+    # Round share owed if it doesn't add up
+    def assign_rounding_diff(row):
+        """Assign the rounding difference to a random member within the expense
+        Add up share_owed of all members and compare with total amount: If the difference is due to rounding (<0.02), add/substract this from a random user within the expense
+        """
+        share_owed_columns = [f"{col_name[1:]}_share_owed" for col_name in cols_member_names if row[f"{col_name[1:]}_share_owed"] > 0] # Members in this expense
+        sum_share_owed = row[share_owed_columns].sum()
+        diff = sum_share_owed - row['Amount']
+        if abs(diff) > 0 and abs(diff) < 0.02:
+            random_member = random.choice(share_owed_columns)
+            row[random_member] += -diff # Substract the difference
+        return row
+
+    expenses_df = expenses_df.apply(assign_rounding_diff, axis = 1)
+
     # Obtain error message
     errors, error_messages, error_count = describe_errors(expenses_df, members_df, group)
 
-    # Prepare context to be passed to template
-    request.session['expenses_to_upload'] = expenses_df.to_json(orient = 'records')
+    # Store data temporarily so it can be pushed later
+    if error_count == 0:
+        app.state.temp_expenses_to_push = {
+            'expenses' : expenses_df.to_dict('records'),
+            'group' : group,
+            'members_in_cols' : members_in_cols,
+        }
+
     
+    # Prepare context to be passed to template
     context = {
         "request" : request,
         "group" : group_to_dict(group), 
@@ -191,16 +202,76 @@ def batch_upload_process(request: Request, group_for_upload = Form(), batch_expe
         "expenses" : expenses_df.to_dict('records'),
         "errors" : errors,
         "error_messages" : error_messages,
+        "file_valid" : error_count == 0,
     }
-    
 
-    # Return a table with expenses
-    if error_count == 0:
-        context['file_valid'] = 'yes'
-        return templates.TemplateResponse("upload_edit.html", context)
-    else:
-        context['file_valid'] = 'no'
-        return templates.TemplateResponse("upload_edit.html", context)
+    return templates.TemplateResponse("upload_edit.html", context)
+
+@app.post('/push_expenses', response_class = HTMLResponse)
+def push_expenses(request: Request):
+    #Another option: Parse the data received as JSON in the Splitwise format needed (https://flask.palletsprojects.com/en/2.2.x/api/#flask.Request.get_json), also see the property 'JSON'
+    sObj = get_access_token(request)
+
+    # The data to upload was stored in app.state
+    try:
+        data_to_push = app.state._state.pop('temp_expenses_to_push')
+    except:
+        apology("You probably went back and tried again? Sorry, please upload the file again", request)
+    expenses = data_to_push['expenses']
+    group = data_to_push['group']
+    members_in_cols = data_to_push['members_in_cols']
+
+    # Upload each expense to Splitwise
+    expenses_to_push = {}
+    for e in expenses:
+        expense = Expense()
+        expense.setCost(e['Amount'])
+        expense.setDescription(e['Description'])
+        expense.setGroupId(group.id)
+        expense.setCreationMethod('Splitwise tools')
+        expense.setDate(e['Date'])
+        expense.setCurrencyCode(e['Currency'])
+        if e['All equal'] == "y" and str.lower(e['Paid by']) == 'you': 
+            expense.setSplitEqually() # Default is 'should_split = True'
+            pass
+        else:
+            for member in members_in_cols:
+                share_paid = e[f"{member['name']}_share_paid"] #e.g. Javier_share_paid
+                share_owed = e[f"{member['name']}_share_owed"]
+
+                if (share_paid + share_owed) > 0: # if any of share_owed or share_paid  is > 0, the user is a member of this expense 
+                    user = ExpenseUser()
+                    user.setId(member['id'])
+                    user.setPaidShare(e[f"{member['name']}_share_paid"]) 
+                    user.setOwedShare(e[f"{member['name']}_share_owed"])
+                    expense.addUser(user)
+        expenses_to_push[e['ID']] = expense # Add to dictionary, using 'Id' (specified by user) as key
+    
+    # Upload expenses
+    expenses_failed = []
+    for expense_id, expense in expenses_to_push.items():
+        nExpense, errors = sObj.createExpense(expense)
+        if nExpense is not None: 
+            print("Expense ID in Splitwise: " + str(nExpense.getId()))
+        else:
+            errors_list = errors.getErrors()['base']
+            print(f"Expense errors: {errors_list}")
+            expenses_failed.append(
+                {
+                    'id': str(expense_id),
+                    'errors' : errors_list
+                }
+            )
+
+    context = {
+        "request": request,
+        "group" : group_to_dict(group),
+        "expenses_failed" : expenses_failed,
+    }
+
+    # Return summary
+    return templates.TemplateResponse("upload_summary.html", context)
+
 
 """       ----------           Retrieve data       -----------            """
 
@@ -210,6 +281,16 @@ def get_groups_by_id(request: Request):
     sObj = get_access_token(request)
     groups = sObj.getGroups()
     return templates.TemplateResponse("groups.html", {"request": request, "groups" : groups})
+
+@app.get("/reset_group", response_class = HTMLResponse):
+def reset_group(request: Request):
+    sObj = get_access_token(request)
+    groups = sObj.getGroups()
+    return templates.TemplateResponse("reset_group.html", {"request": request, "groups" : groups})
+
+@app.post("/delete_expenses/{group_id}"):
+
+
 
 @app.get("/template/{group_id}")
 def get_template_by_group_id(request: Request, group_id: int):
@@ -331,7 +412,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     return crud.create_user(db=db, user=user)
 
 #Add middleware
-app.add_middleware(SessionMiddleware, secret_key="some-random-string") # https://github.com/tiangolo/fastapi/issues/4746#issuecomment-1133866839
+app.add_middleware(SessionMiddleware, secret_key="some-random-string", same_site = 'None') # https://github.com/tiangolo/fastapi/issues/4746#issuecomment-1133866839
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["sql_app",""])
