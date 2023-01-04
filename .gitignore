@@ -14,6 +14,7 @@ node_modules/
 .pytest_cache/
 docs/
 app.py
+*.db
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
