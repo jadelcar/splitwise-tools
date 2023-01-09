@@ -68,7 +68,7 @@ The following expenses will be uploaded to group '{{ group['name'] }}' [ID: {{ g
     </div>
 </div>
 {% if file_valid == True %}
-    <form action="/push_expenses" method="post" >
+    <form action="/push_expenses/{{ upload_id }}" method="post" >
         <button class="btn btn-primary" type="submit">Upload</button>
     </form>
 {% else %}

@@ -1,42 +1,26 @@
 import uvicorn
-# import jinja2
-# import traceback
-import json
 import random
-# from typing import Union, List
 
 from fastapi import FastAPI, HTTPException, Depends, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.requests import Request
 
-# from sqlalchemy import create_engine,  Boolean, Column, ForeignKey, Integer, String
-# from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session, sessionmaker, relationship
+from sqlalchemy.orm import Session
 
-from starlette.applications import Starlette
+# from starlette.applications import Starlette
 import starlette.status as status
-from starlette_core.messages import message
+# from starlette_core.messages import message
 from starlette_core.templating import Jinja2Templates
-# from starlette.routing import Route
-# from starlette_admin import config as admin_config
 
-
-# from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
-# from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 
 from sql_app.database import engine, SessionLocal
 from sql_app import crud, models, schemas
 
-# from werkzeug.security import check_password_hash, generate_password_hash
-
-# from jinja2 import pass_context
-
 from splitwise import Splitwise
 from splitwise.expense import Expense
 from splitwise.user import ExpenseUser
-
 
 from decimal import *
 from tempfile import mkdtemp
@@ -82,7 +66,7 @@ def home(request: Request):
 
 @app.get("/login_sw")
 def login_sw(request: Request):
-    sObj = Splitwise(Config.consumer_key, Config.consumer_secret) #Special object for authentication in Splitwise
+    sObj = Splitwise(Config.consumer_key, Config.consumer_secret) # Special object for authentication in Splitwise
     url, secret = sObj.getAuthorizeURL() # Method in sObj 'getAuthorizeURL()' returns the URL for authorizing the app
     
     request.session['secret'] = secret 
@@ -121,18 +105,23 @@ def batch_upload_show_form(request: Request):
 
 
 @app.post("/batch_upload_process", response_class = HTMLResponse)
-def batch_upload_process(request: Request, group_for_upload = Form(), batch_expenses_file : UploadFile = File(...)):
+def batch_upload_process(request: Request, db: Session = Depends(get_db),group_for_upload = Form(), batch_expenses_file : UploadFile = File(...)):
     sObj = get_access_token(request)
-    app_current_user = sObj.getCurrentUser()
+    current_user = sObj.getCurrentUser()
+    
     # Fetch group info
     group = sObj.getGroup(group_for_upload)
     
+    # Erase from session any previous upload
+    request.session.pop('upload_id', None)
+
     # Import and parse user file 
     file = batch_expenses_file.file.read()
     
     expenses_df = pd.read_excel(file, sheet_name = "Expenses")
     cols_member_names = list(expenses_df.filter(regex='^_', axis=1))
     expenses_df['Total Shares'] = expenses_df[cols_member_names].sum(axis = 1)
+    expenses_df['All equal'] = expenses_df['All equal'].replace(['y','n'], [True, False])
     members_df = pd.read_excel(file, sheet_name = "Members")
     
     # List with members entered in columns with their respective ID
@@ -144,10 +133,14 @@ def batch_upload_process(request: Request, group_for_upload = Form(), batch_expe
                 'id' :  int(members_df[members_df['Name'] == member[1:]]['ID'].values[0]) # Search in column'Name' of members_df and return the column 'ID'
             })
 
+    # Payer ID
+    expenses_df = expenses_df.merge(members_df, how = 'left', left_on = "Paid by", right_on = 'Name').rename(columns = {'ID_x': "ID", 'ID_y': "Payer ID"})
+
+
     # Calculate share owed and paid for a given member
     def get_share_owed(row, member_name):
         """ Calculate share owed for a given expense (row) and user"""
-        if row['All equal'] == "y": # Default: Split equally among all group members
+        if row['All equal'] == True: # Default: Split equally among all group members
             return row['Amount'] / len(group.members)
         elif pd.isna(row[member_name]):
             return 0
@@ -186,66 +179,61 @@ def batch_upload_process(request: Request, group_for_upload = Form(), batch_expe
     errors, error_messages, error_count = describe_errors(expenses_df, members_df, group)
 
     # Store data temporarily so it can be pushed later
+    expenses = expenses_df.to_dict('records')
     if error_count == 0:
-        app.state.temp_expenses_to_push = {
-            'expenses' : expenses_df.to_dict('records'),
-            'group' : group,
-            'members_in_cols' : members_in_cols,
-        }
 
+        # Create upload and expenses in database
+        new_upload = crud.create_upload(db, creator_user_id = current_user.id, group_id = group.id)
+             
+        for exp in expenses:
+            crud.create_expense(db, upload_id = new_upload.id, expense = exp, group_members = members_in_cols, creator_user_id = current_user.id)
     
     # Prepare context to be passed to template
     context = {
         "request" : request,
         "group" : group_to_dict(group), 
         "members_in_cols" : members_in_cols, 
-        "expenses" : expenses_df.to_dict('records'),
+        "expenses" : expenses,
         "errors" : errors,
         "error_messages" : error_messages,
         "file_valid" : error_count == 0,
+        "upload_id" : new_upload.id,
     }
 
     return templates.TemplateResponse("upload_edit.html", context)
 
-@app.post('/push_expenses', response_class = HTMLResponse)
-def push_expenses(request: Request):
-    #Another option: Parse the data received as JSON in the Splitwise format needed (https://flask.palletsprojects.com/en/2.2.x/api/#flask.Request.get_json), also see the property 'JSON'
-    sObj = get_access_token(request)
+@app.post('/push_expenses/{upload_id}', response_class = HTMLResponse)
+def push_expenses(request: Request, upload_id: int, db: Session = Depends(get_db)):
 
-    # The data to upload was stored in app.state
-    try:
-        data_to_push = app.state._state.pop('temp_expenses_to_push')
-    except:
-        apology("You probably went back and tried again? Sorry, please upload the file again", request)
-    expenses = data_to_push['expenses']
-    group = data_to_push['group']
-    members_in_cols = data_to_push['members_in_cols']
+    sObj = get_access_token(request)
+        
+    upload = crud.get_upload_by_id(db, upload_id = upload_id)
+    expenses = crud.get_expenses_by_upload_id(db, upload_id = upload_id)
+    group = crud.get_group_by_id(db, group_db_id = upload.group_id) # DB ID, not SW ID
 
     # Upload each expense to Splitwise
     expenses_to_push = {}
     for e in expenses:
         expense = Expense()
-        expense.setCost(e['Amount'])
-        expense.setDescription(e['Description'])
-        expense.setGroupId(group.id)
+        expense.setCost(e.amount)
+        expense.setDescription(e.description)
+        expense.setGroupId(group.sw_id)
         expense.setCreationMethod('Splitwise tools')
-        expense.setDate(e['Date'])
-        expense.setCurrencyCode(e['Currency'])
-        if e['All equal'] == "y" and str.lower(e['Paid by']) == 'you': 
-            expense.setSplitEqually() # Default is 'should_split = True'
-            pass
+        expense.setDate(e.date)
+        expense.setCurrencyCode(e.currency)
+        # If we split all equal, no need to add members
+        if e.all_equal == True and e.payer_id == sObj.getCurrentUser().getId(): 
+            expense.setSplitEqually()
+        # O/w, add each member of the expense
         else:
-            for member in members_in_cols:
-                share_paid = e[f"{member['name']}_share_paid"] #e.g. Javier_share_paid
-                share_owed = e[f"{member['name']}_share_owed"]
+            for member in e.expense_members:
+                user = ExpenseUser()
+                user.setId(member.member.sw_id)
+                user.setPaidShare(member.share_paid) 
+                user.setOwedShare(member.share_owed)
+                expense.addUser(user)
 
-                if (share_paid + share_owed) > 0: # if any of share_owed or share_paid  is > 0, the user is a member of this expense 
-                    user = ExpenseUser()
-                    user.setId(member['id'])
-                    user.setPaidShare(e[f"{member['name']}_share_paid"]) 
-                    user.setOwedShare(e[f"{member['name']}_share_owed"])
-                    expense.addUser(user)
-        expenses_to_push[e['ID']] = expense # Add to dictionary, using 'Id' (specified by user) as key
+        expenses_to_push[e.within_upload_id] = expense # Add to dictionary, using 'Id' (specified by user) as key
     
     # Upload expenses
     expenses_failed = []
@@ -265,15 +253,49 @@ def push_expenses(request: Request):
 
     context = {
         "request": request,
-        "group" : group_to_dict(group),
+        "group" :   {   
+                        'id': group.sw_id,
+                        'name': group.name,
+                    },
         "expenses_failed" : expenses_failed,
     }
 
     # Return summary
     return templates.TemplateResponse("upload_summary.html", context)
 
+"""       ----------           Create data       -----------            """
+@app.get("/create_upload", response_class=HTMLResponse)
+def create_upload(request: Request, db: Session = Depends(get_db)):
+    """Create a new upload"""
+    try:
+        sObj = get_access_token(request)
+        current_user = sObj.getCurrentUser().getId()
+    except:
+        current_user = 7357
+    new_upload = crud.create_upload(db, creator_user_id = current_user)
+    return templates.TemplateResponse("home.html", {"request": request, "new_upload" : new_upload})
+
+@app.post("/create_expense", response_class=HTMLResponse)
+def create_expense(request: Request, db: Session = Depends(get_db)):
+    """Create a new expense"""
+    try:
+        sObj = get_access_token(request)
+        current_user = sObj.getCurrentUser().getId()
+    except:
+        current_user = 7357
+    crud.create_expense(db, creator_user_id = current_user)
+    return templates.TemplateResponse("home.html", {"request": request})
+
 
 """       ----------           Retrieve data       -----------            """
+
+@app.get("/uploads", response_class=HTMLResponse)
+def get_groups_by_id(request: Request, db: Session = Depends(get_db)):
+    """Get uploads of the current user logged in the app, using it's user ID"""
+    sObj = get_access_token(request)
+    sObj.getCurrentUser().id
+    uploads = crud.get_uploads(db)
+    return templates.TemplateResponse("uploads.html", {"request": request, "uploads" : uploads})
 
 @app.get("/groups", response_class=HTMLResponse)
 def get_groups_by_id(request: Request):
@@ -281,16 +303,6 @@ def get_groups_by_id(request: Request):
     sObj = get_access_token(request)
     groups = sObj.getGroups()
     return templates.TemplateResponse("groups.html", {"request": request, "groups" : groups})
-
-@app.get("/reset_group", response_class = HTMLResponse):
-def reset_group(request: Request):
-    sObj = get_access_token(request)
-    groups = sObj.getGroups()
-    return templates.TemplateResponse("reset_group.html", {"request": request, "groups" : groups})
-
-@app.post("/delete_expenses/{group_id}"):
-
-
 
 @app.get("/template/{group_id}")
 def get_template_by_group_id(request: Request, group_id: int):

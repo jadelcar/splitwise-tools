@@ -1,8 +1,8 @@
 # Byte-compiled / optimized / DLL files
 *.py[cod]
 *.pyc
+__pycache__/
 .vscode/
-flask_session/
 test/
 instance/
 node_modules/
@@ -15,55 +15,16 @@ node_modules/
 docs/
 app.py
 *.db
+static/assets/group_templates/
+sql_app.db
+config.py
 
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
+# Other types of files
 
-# C extensions
-*.so
 
-# Distribution / packaging
-bin/
-build/
-develop-eggs/
-dist/
-eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
 .tox/
 .coverage
 .cache
 nosetests.xml
 coverage.xml
-
-# Translations
-*.mo
-
-# Mr Developer
-.mr.developer.cfg
-.project
-.pydevproject
-
-# Rope
-.ropeproject
-
-# Django stuff:
 *.log
-*.pot
-
-# Sphinx documentation
-docs/_build/
-static/assets/group_templates/

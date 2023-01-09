@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Redi
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from starlette.middleware.sessions import SessionMiddleware
+from typing import Tuple
 
 # Configure templating
 templates = Jinja2Templates(directory="static/templates")
@@ -46,20 +47,6 @@ def apology(message, request, code=400):
         return s
     return templates.TemplateResponse("apology.html", {"request": request, "top" : code, "bottom" : escape(message)}, status_code=code)
 
-
-def login_required(f):
-    """
-    Decorate routes to require login.
-
-    https://flask.palletsprojects.com/en/1.1.x/patterns/viewdecorators/
-    """
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if session.get("user_id") is None:
-            return redirect("/login")
-        return f(*args, **kwargs)
-    return decorated_function
-
 def usd(value):
     """Format value as USD."""
     return f"${value:,.2f}"
@@ -72,22 +59,29 @@ def group_to_dict(group: Group):
         "members" : [(member.id, member.first_name, member.last_name) for member in group.members]
     }
 
-"""
-Verification of file
+def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: Group) -> Tuple[dict,  list, int]:
+    """ Describe all errors in the excel file. Returns
 
-error_master is a dict of dicts. Each dict refers to one type of error (description too long, date format, wrong group member etc.) and contains:
-    'message': Displayed to user
-    'element_type': Type of element affected (expense, member etc.)
-    'error_list': List of elements affected
+    We create `error_master`, a dict of dicts. Each dict refers to one type of error (description too long, date format, wrong group member etc.) and contains:
+        `message`: Displayed to user
+        `element_type`: Type of element affected (expense, member etc.)
+        `error_list`: List of elements affected
 
-As we identify errors, we populate the dicts with function 'add_error' and build the error message progressively with function 'add_to_error_msg'.
-"""
+    Example:
 
+    error_master = {
+        'descr' : {
+            "message" : f"Expense description is longer than 50 characters" ,
+            "element_type" : "expense(s)" 
+            "error_list" : [1, 7, 9]
+            } ,
+        (...)
+    }
 
-
-def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: Group):
-    """ Describe all errors in the file"""
+    As we identify errors, we populate the dicts with function 'add_error' and build the error message progressively with function 'add_to_error_msg'.
     
+    To edit error types and descriptions, go to constants.py
+    """
     def add_to_error_list(error_type : str, element_id : int):
         """ Add an element to error list, indicating error type and element ID """
         errors[error_type]['error_list'].append(str(element_id))
@@ -105,28 +99,25 @@ def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: 
 
     # Initialize error list for each type of error
     # For each error type, add to dict list of items ('error_list') affected by this error
-    # To edit error types and descriptions, go to constants.py
     errors = ERROR_MASTER.copy()
     for descr in ERROR_MASTER.keys(): 
         errors[str(descr)]['error_list'] = [] 
     
     # File-level errors
     # Error 1: Friend names don't match in the two sheets
-    list_expenses = [m[1:] for m in expenses_df.filter(regex='^_', axis=1)] # Get list of column names starting with "_", but removing it
+    list_expenses = [m[1:] for m in expenses_df.filter(regex='^_', axis=1)]
     list_expenses.sort()
     list_members = members_df['Name'].values.tolist()
     list_members.sort()
     differences = set(list_expenses) ^ set(list_members) 
     for diff in differences:
         add_to_error_list(error_type = "group_member", element_id = diff)
-    # for member_name in list(expenses_df.filter(regex='^_', axis=1)):
-    #     if member_name[1:] not in members_df['Name'].values:
-    #         add_to_error_list(error_type = "group_member", element_id = member_name[1:])
 
     # Error 2: Number of friends in file is different than total group members
     if len(members_df['Name']) != len(group.members) : add_to_error_list("n_members", 1, errors)
 
-    #Expense-level errors
+    # Expense-level errors
+    
     for i, row in expenses_df.iterrows():
         # Error 3: Description length > max 
         if len(row["Description"]) > EXP_DESCR_MAX_CHARS: 
@@ -138,10 +129,9 @@ def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: 
             add_to_error_list("shares_no_addup", row['ID'])
         elif row['Split type'] == "shares" and row['Total Shares'] != 100 : 
             add_to_error_list("shares_no_addup", row['ID'])
-
         
         # Error 5: Split type not supported
-        if row["Split type"] not in SPLIT_TYPES and row["All equal"] != 'y': 
+        if row["Split type"] not in SPLIT_TYPES and row["All equal"] != True: 
             add_to_error_list("split_type_unsupported", row['ID'])
 
     # Build the error message, looping over the different errors
@@ -156,7 +146,3 @@ def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: 
     
     # Return
     return errors, error_messages, error_count
-
-
-
-

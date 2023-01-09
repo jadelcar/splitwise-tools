@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Union 
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -39,12 +39,46 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
-
 class User(UserBase): 
     id: int
+    email: str
     sw_user_id: int
     member_of: List[Group] = []
     friends: List[Member] = []
-    email: str
+    class Config:
+        orm_mode = True
+
+# Expense
+class ExpenseBase(BaseModel):
+    id: int
+    
+class ExpenseCreate(ExpenseBase):
+    created_at: str = datetime.utcnow
+    
+class Expense(ExpenseBase): 
+    sw_id: int
+    description: str
+    date: datetime
+    amount: float
+    currency: str
+    payer_id: int
+    all_equal: bool
+    split_type: str
+    sw_id: int
+
+    members: List[Member] = []
+    class Config:
+        orm_mode = True
+
+# Upload
+class UploadBase(BaseModel):
+    id: int
+    
+class UploadCreate(UploadBase):
+    created_at: str = datetime.utcnow
+    creator_id: int
+    
+class Upload(UploadBase): 
+    expenses: List[Expense] = []
     class Config:
         orm_mode = True
