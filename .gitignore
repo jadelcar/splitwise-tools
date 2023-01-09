@@ -18,6 +18,7 @@ app.py
 static/assets/group_templates/
 sql_app.db
 classes.py
+app.py
 
 # Other types of files
 
