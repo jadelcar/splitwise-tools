@@ -1,12 +1,8 @@
-import os
-import requests
-import urllib.parse
+
 import pandas as pd
 
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
-from starlette.middleware.sessions import SessionMiddleware
 from typing import Tuple
 
 # Configure templating

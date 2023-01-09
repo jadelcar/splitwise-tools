@@ -1,7 +1,6 @@
 from sqlalchemy import Table, Boolean, Column, ForeignKey, Integer, String, DateTime, Numeric
 from sqlalchemy.orm import relationship, backref
 from datetime import datetime
-from typing import Optional
 from .database import Base
 
 # Association table between groups and members

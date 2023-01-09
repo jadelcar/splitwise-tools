@@ -8,9 +8,7 @@ from fastapi.requests import Request
 
 from sqlalchemy.orm import Session
 
-# from starlette.applications import Starlette
 import starlette.status as status
-# from starlette_core.messages import message
 from starlette_core.templating import Jinja2Templates
 
 from starlette.middleware.sessions import SessionMiddleware
@@ -23,7 +21,6 @@ from splitwise.expense import Expense
 from splitwise.user import ExpenseUser
 
 from decimal import *
-from tempfile import mkdtemp
 import config as Config
 import pandas as pd
 import numpy as np
@@ -31,7 +28,6 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Border, Side
 
 from helpers import *
-from classes import *
 from constants import *
 
 # Create app
