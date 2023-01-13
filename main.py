@@ -374,8 +374,8 @@ def register(request: Request, username: str = Form(), password: str = Form(), c
     # Obtain user's data entered in the form
     # username = request.get("username")
     # password = request.get("password")
-    # confirmation = request.get("confirmation")
-    
+    # confirmation = request.get("confirmation") 
+       
     if password != confirmation:
         return apology("You didn't write the same pass twice, didn't you?", request, 400)
     # Check if the username is being used
@@ -420,7 +420,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     return crud.create_user(db=db, user=user)
 
 #Add middleware
-app.add_middleware(SessionMiddleware, secret_key="some-random-string", same_site = 'None') # https://github.com/tiangolo/fastapi/issues/4746#issuecomment-1133866839
+app.add_middleware(SessionMiddleware, secret_key="some-random-string") # https://github.com/tiangolo/fastapi/issues/4746#issuecomment-1133866839
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["sql_app",""])
