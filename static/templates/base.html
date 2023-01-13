@@ -40,7 +40,7 @@
                             <li class="nav-item"><a class="nav-link" href="/logout">Log Out</a></li>
                             <li class="nav-item"><a class="nav-link">User: {{ request.session["user_fname"] }} </a></li>
                         </ul>
-                    {% elif request.session["access_token"] %}
+                    {% else %}
                         <ul class="navbar-nav ms-auto mt-2">
                             <li class="nav-item"><a class="nav-link" href="/login_sw">Connect to Splitwise</a></li>
                         </ul>
