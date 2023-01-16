@@ -37,12 +37,15 @@ If there's any errors detected in the file, you will see a message at the top de
 
 ## Demo
 Authorize Splitwise
+
 ![](https://github.com/jadelcar/splitwise-tools/blob/master/Splitwise-tools-demo-authorize.gif)
 
 Download templates
+
 ![](https://github.com/jadelcar/splitwise-tools/blob/master/Splitwise-tools-demo-download-template.gif)
 
 Upload expenses
+
 ![](https://github.com/jadelcar/splitwise-tools/blob/master/Splitwise-tools-demo-upload-expenses.gif)
 
 
