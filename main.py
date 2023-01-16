@@ -159,14 +159,14 @@ def batch_upload_process(request: Request, db: Session = Depends(get_db),group_f
     # Round share owed if it doesn't add up
     def assign_rounding_diff(row):
         """Assign the rounding difference to a random member within the expense
-        Add up share_owed of all members and compare with total amount: If the difference is due to rounding (<0.02), add/substract this from a random user within the expense
+        Add up share_owed of all members and compare with total amount: If the difference is due to rounding (<0.02), add/subtract this from a random user within the expense
         """
         share_owed_columns = [f"{col_name[1:]}_share_owed" for col_name in cols_member_names if row[f"{col_name[1:]}_share_owed"] > 0] # Members in this expense
         sum_share_owed = row[share_owed_columns].sum()
         diff = sum_share_owed - row['Amount']
         if abs(diff) > 0 and abs(diff) < 0.02:
             random_member = random.choice(share_owed_columns)
-            row[random_member] += -diff # Substract the difference
+            row[random_member] += -diff # Subtract the difference
         return row
 
     expenses_df = expenses_df.apply(assign_rounding_diff, axis = 1)
@@ -352,7 +352,7 @@ def get_template_by_group_id(request: Request, group_id: int):
         members_ws.cell(row = r, column = 1, value = member_name)
         members_ws.cell(row = r, column = 2, value = member.id)
 
-    #Save and return file
+    # Save and return file
     file_path = f"static/assets/group_templates/{group_id}.xlsx"
     wb.save(file_path)
 
@@ -361,7 +361,6 @@ def get_template_by_group_id(request: Request, group_id: int):
 
 
 """       ----------           User registration       -----------            """
-"""Register user in database"""
 
 @app.get("/register/", response_class = HTMLResponse)
 def register_show_form(request: Request):
@@ -371,13 +370,12 @@ def register_show_form(request: Request):
 @app.post("/register_submit/")
 def register(request: Request, username: str = Form(), password: str = Form(), confirmation: str = Form(), db: Session = Depends(get_db)):
     """ Register user using data in their registration form"""
+    
     # Obtain user's data entered in the form
-    # username = request.get("username")
-    # password = request.get("password")
-    # confirmation = request.get("confirmation") 
-       
-    if password != confirmation:
-        return apology("You didn't write the same pass twice, didn't you?", request, 400)
+    username = request.get("username")
+    password = request.get("password")
+    confirmation = request.get("confirmation") 
+    
     # Check if the username is being used
     db_user_byusername = crud.get_user_by_username(db, username=username)
     if db_user_byusername:
@@ -403,23 +401,22 @@ def register(request: Request, username: str = Form(), password: str = Form(), c
     # Redirect to home
     return RedirectResponse('/', status_code=status.HTTP_302_FOUND) # See https://stackoverflow.com/a/65512571/19667698
 
-
 @app.get("user/{username}")
 def get_user_byusername(username: int, db: Session = Depends(get_db)):
+    """Get user by its username"""
     user = crud.get_user_by_username(db, username = username).first()
     return user
 
 """ Create users and groups in database"""
-# Create a new user (Registration) """
 @app.post("/users/", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    """Create a user"""
+    """Create a new user in database"""
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user: #If db_user exists (i.e. the search by email return something)
         raise HTTPException(status_code=400, detail="Email already registered")
     return crud.create_user(db=db, user=user)
 
-#Add middleware
+# Add middleware
 app.add_middleware(SessionMiddleware, secret_key="some-random-string") # https://github.com/tiangolo/fastapi/issues/4746#issuecomment-1133866839
 
 if __name__ == "__main__":
