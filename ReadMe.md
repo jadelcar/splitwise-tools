@@ -35,6 +35,17 @@ After uploading the file, this will be validated and you will see a summary of a
 
 If there's any errors detected in the file, you will see a message at the top describing each error and the expenses affected. In some cases, these will be highlighted in the table. Please fix these and upload the expenses again.
 
+## Demo
+Authorize Splitwise
+![](https://github.com/jadelcar/splitwise-tools/blob/master/Splitwise-tools-demo-download-authorize.gif)
+
+Download templates
+![](https://github.com/jadelcar/splitwise-tools/blob/master/Splitwise-tools-demo-download-template.gif)
+
+Upload expenses
+![](https://github.com/jadelcar/splitwise-tools/blob/master/Splitwise-tools-demo-upload-expenses.gif)
+
+
 ## Future improvements:
 
 
