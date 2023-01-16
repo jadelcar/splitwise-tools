@@ -1,35 +1,61 @@
 # Byte-compiled / optimized / DLL files
 *.py[cod]
 *.pyc
-__pycache__/
 .vscode/
+flask_session/
+flask_session/*
 test/
-instance/
+instance/database.db
+test/
+
+node_modules/*
 node_modules/
-env/
-package-lock.json
-package.json
-*.code-workspace
-node_modules/
-.pytest_cache/
-docs/
-app.py
-*.db
-static/assets/group_templates/
-sql_app.db
-classes.py
-app.py
-previous_versions/
-config.py
 
-# Other types of files
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
 
+# C extensions
+*.so
 
+# Distribution / packaging
+bin/
+build/
+develop-eggs/
+dist/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
 .tox/
 .coverage
 .cache
 nosetests.xml
 coverage.xml
+
+# Translations
+*.mo
+
+# Mr Developer
+.mr.developer.cfg
+.project
+.pydevproject
+
+# Rope
+.ropeproject
+
+# Django stuff:
 *.log
 *.pot
 
@@ -50,4 +76,9 @@ __pycache__/helpers.cpython-38.pyc
 instance/database.db
 flask_session/2029240f6d1128be89ddc32729463129
 python_sandbox.ipynb
+<<<<<<< HEAD
 config.py
+=======
+docs/*
+sql_app.db
+>>>>>>> 08a0c521ea55548d48beba799e6d978f4bbe09f8
