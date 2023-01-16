@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Edit expenses
+{% endblock %}
+
+{% block body %}
+        <link href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css" rel="stylesheet" id="bootstrap-css">
+        <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+        <script src="//code.jquery.com/jquery-1.11.1.min.js"></script>              
+
+
+{% if error_messages %}    
+<div class="alert alert-warning text-left" style = "padding:25px" role="alert">
+    <h4> Error! </h4>
+    File could not be uploaded due to the following errors:
+    <ul>
+    {% for message in error_messages %}
+    <li>{{ message }}</li>
+    {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<div class="table-responsive">
+The following expenses will be uploaded to group '{{ group['name'] }}' [ID: {{ group['id'] }}].
+
+<div class="container">
+        <table class="table table-striped .w-auto text-left">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Description</th>
+                <th>Date</th>
+                <th>Amount</th>            
+                <th>Currency</th>            
+                <th>Paid by</th>            
+                <th>All equal</th>            
+                <th>Type of split</th>
+                {% for member in members_in_cols %}
+                    <th>{{ member.name }} [{{member.id}}]</th>
+                {% endfor %}
+                <th>Total shares</th>
+                <!-- <th class="text-center">Actions</th> -->
+            </tr>
+        </thead>
+                {% for expense in expenses %}
+                <tr>
+                    <td>{{ expense['ID'] }}</td>
+                    <td {% if expense['ID'] | string in errors['descr']['error_list'] %} class= "text-danger"{% endif %} >{{ expense['Description'] }}</td>
+                    <td>{{ expense['Date'].date()}}</td>
+                    <td>{{ "%0.2f" | format(expense['Amount'] | float) }}</td>
+                    <td>{{ expense['Currency'] }}</td>
+                    <td>{{ expense['Paid by'] }}</td>
+                    <td>{{ expense['All equal'] | upper }}</td>
+                    <td {% if expense['ID'] | string in errors['split_type_unsupported']['error_list'] %} class= "text-danger"{% endif %}>{{ expense["Split type"] }}</td>
+                    {% for member in members_in_cols %}
+                        {% set col_name = "_" ~ member['name'] %}
+                        {% set share_owed = member['name'] + "_share_owed" %}
+
+                        <td>{{ "%0.2f" | format(expense[col_name] | float) }} <br>
+                            ({{ "%0.2f" | format(expense[share_owed] | float) }})</td>
+                    {% endfor %}
+                    <td {% if expense['ID'] | string in errors['shares_no_addup']['error_list'] %} class= "text-danger"{% endif %}>{{expense['Total Shares']}}</td>
+                </tr> 
+                {% endfor %}
+        </table>
+    </div>
+</div>
+{% if file_valid == True %}
+    <form action="/push_expenses/{{ upload_id }}" method="post" >
+        <button class="btn btn-primary" type="submit">Upload</button>
+    </form>
+{% else %}
+    <div class="d-inline-block" data-toggle="tooltip" data-placement="top" title="File is not valid, see errors above">
+        <button class="btn btn-light" style="pointer-events: none;" type="button" disabled>Upload</button>
+    </div>
+{% endif %}
+
+
+{% endblock %}

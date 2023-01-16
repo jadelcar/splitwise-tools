@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Uploads
+{% endblock %}
+
+{% block body %}
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css" rel="stylesheet" id="bootstrap-css">
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+<script src="//code.jquery.com/jquery-1.11.1.min.js"></script>
+<!------ Include the above in your HEAD tag ---------->
+
+<div class="container">
+    <div class="row col-md-6 col-md-offset-2 custyle">
+    <table class="table table-striped custab">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Created at</th>
+            <th class="text-center">Actions</th>
+        </tr>
+    </thead>
+            {% for upload in uploads %}
+            <tr>
+            <td>{{ upload.id }}</td>
+            <td>{{ upload.created_at }}</td>
+            <td class="text-center"><a class='btn btn-info btn-xs' href=""><span class="glyphicon glyphicon-download"></span> Placeholder</a>
+            </tr>            
+            {% endfor %}
+    </table>
+    </div>
+</div>
+{% endblock %}

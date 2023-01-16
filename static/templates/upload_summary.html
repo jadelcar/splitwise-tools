@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Uploaded!
+{% endblock %}
+
+{% block body %}
+    {% if expenses_failed|length == 0 %}
+        <p>Congratulations! You have uploaded the expenses! </p> 
+        <p> See them in <a href="https://secure.splitwise.com/#/groups/{{ group.id }}" target = "_blank">Splitwise</a></p>        
+    {% else %}
+        <div class="container">
+            <div class="row col-md-8 custyle">
+            There were some errors when uploading the expenses to group '{{ group.name }}' [ID: {{ group.id }}].
+            <table class="table table-striped custab">
+                <thead>
+                    <tr>
+                        <th>Expense ID</th>
+                        <th>Error description</th>
+                        <!-- <th class="text-center">Actions</th> -->
+                    </tr>
+                </thead>
+                {% for expense in expenses_failed %}
+                <tr>
+                    <td>{{expense.id}}</td>
+                    <td>
+                        {% for error in expense.errors %}
+                        <p>{{error}}</p>
+                    {% endfor %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    {% endif %}
+
+{% endblock %}
