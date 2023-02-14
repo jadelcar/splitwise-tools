@@ -117,7 +117,7 @@ def batch_upload_process(request: Request, db: Session = Depends(get_db),group_f
     expenses_df = pd.read_excel(file, sheet_name = "Expenses")
     cols_member_names = list(expenses_df.filter(regex='^_', axis=1))
     expenses_df['Total Shares'] = expenses_df[cols_member_names].sum(axis = 1)
-    expenses_df['All equal'] = expenses_df['All equal'].replace(['y','n'], [True, False])
+    expenses_df['All equal'] = expenses_df['All equal'].apply(str.lower).replace(['y','n'], [True, False])
     members_df = pd.read_excel(file, sheet_name = "Members")
     
     # List with members entered in columns with their respective ID
@@ -193,7 +193,7 @@ def batch_upload_process(request: Request, db: Session = Depends(get_db),group_f
         "errors" : errors,
         "error_messages" : error_messages,
         "file_valid" : error_count == 0,
-        "upload_id" : new_upload.id,
+        "upload_id" : new_upload.id if error_count==0 else 0,
     }
 
     return templates.TemplateResponse("upload_edit.html", context)
