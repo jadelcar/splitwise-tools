@@ -47,6 +47,12 @@ Upload expenses
 
 
 ## Future improvements:
+  * Allow user to select members present in the excel template to download
+  * Dashboard to visualize expenditures in a group and debts between members
+  * Further checks on expenses before upload
+  * Support for users to indicate the group ID inside the uploaded file
+  * Warning for users trying to upload duplicated expenses
+  * Support the modification of expenses after upload and before pushing expenses to Splitwise
 
 
 
