@@ -51,7 +51,7 @@ The following expenses will be uploaded to group '{{ group['name'] }}' [ID: {{ g
                     <td>{{ expense['Date'].date()}}</td>
                     <td>{{ "%0.2f" | format(expense['Amount'] | float) }}</td>
                     <td>{{ expense['Currency'] }}</td>
-                    <td>{{ expense['Paid by'] }}</td>
+                    <td {% if expense['ID'] | string in errors['payer_name_error']['error_list'] %} class= "text-danger"{% endif %} >{{ expense['Paid by'] }}</td>
                     <td>{{ expense['All equal'] | upper }}</td>
                     <td {% if expense['ID'] | string in errors['split_type_unsupported']['error_list'] %} class= "text-danger"{% endif %}>{{ expense["Split type"] }}</td>
                     {% for member in members_in_cols %}

@@ -130,6 +130,10 @@ def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: 
         if row["Split type"] not in SPLIT_TYPES and row["All equal"] != True: 
             add_to_error_list("split_type_unsupported", row['ID'])
 
+        # Error 6: Payer name does not match
+        if row["Paid by"] not in list_members:
+            add_to_error_list("payer_name_error", element_id = row['ID'])
+
     # Build the error message, looping over the different errors
     error_messages = []
     for type in errors.keys():

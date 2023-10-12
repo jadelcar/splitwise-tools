@@ -24,5 +24,8 @@ ERROR_MASTER = {
         "element_type" : "expense(s)" },
     'split_type_unsupported' : {
         "message" : "Split type is not supported, choose one of the following: " + ", ".join(["'" + t + "'" for t in SPLIT_TYPES]),
+        "element_type" : "expense(s)" },
+    'payer_name_error' : {
+        "message" : 'Payer name does not match any of the members. Check the sheet "Members"',
         "element_type" : "expense(s)" }
 }
