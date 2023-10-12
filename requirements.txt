@@ -1,12 +1,11 @@
-fastapi==0.89.0
+fastapi==0.103.2
 numpy==1.23.4
 openpyxl==3.0.10
 pandas==1.5.1
 pydantic==1.10.2
 splitwise==2.3.0
 SQLAlchemy==1.4.42
-starlette==0.22.0
+starlette==0.31.1
 starlette_core==0.0.1
-uvicorn==0.20.0
+uvicorn==0.23.2
 Werkzeug==2.2.2
-python-multipart
