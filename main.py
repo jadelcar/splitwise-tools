@@ -95,6 +95,9 @@ def logout(request: Request):
 
 @app.get('/batch_upload', response_class = HTMLResponse)
 def batch_upload_show_form(request: Request):
+    """
+    Show form for uploading an excel file
+    """
     sObj = get_access_token(request)
     groups = sObj.getGroups()
     return templates.TemplateResponse("batch_upload.html", {"request": request, "groups" : groups})
@@ -102,6 +105,9 @@ def batch_upload_show_form(request: Request):
 
 @app.post("/batch_upload_process", response_class = HTMLResponse)
 def batch_upload_process(request: Request, db: Session = Depends(get_db),group_for_upload = Form(), batch_expenses_file : UploadFile = File(...)):
+    """
+    Process the data uploaded
+    """
     sObj = get_access_token(request)
     current_user = sObj.getCurrentUser()
     
@@ -114,37 +120,41 @@ def batch_upload_process(request: Request, db: Session = Depends(get_db),group_f
     # Import and parse user file 
     file = batch_expenses_file.file.read()
     
-    expenses_df = pd.read_excel(file, sheet_name = "Expenses")
-    cols_member_names = list(expenses_df.filter(regex='^_', axis=1))
-    expenses_df['Total Shares'] = expenses_df[cols_member_names].sum(axis = 1)
-    expenses_df['All equal'] = expenses_df['All equal'].apply(str.lower).replace(['y','n'], [True, False])
-    members_df = pd.read_excel(file, sheet_name = "Members")
+    expenses_df = pd.read_excel(file, sheet_name = "Expenses") # Import expenses sheet
+    members_df = pd.read_excel(file, sheet_name = "Members") #Import the members sheet
     
-    # List with members entered in columns with their respective ID
+    # Parse the expenses sheet
+    cols_member_names = list(expenses_df.filter(regex='^_', axis=1)) # Make a list with member names
+    expenses_df['Total Shares'] = expenses_df[cols_member_names].sum(axis = 1) # Create col to add shares from all members
+    
+    expenses_df['All equal'] = expenses_df['All equal'].astype(str).apply(str.lower).replace(['y','n',''], [True, False, False]) # Read the 'All equal' columns
+        
+    # Create a list of dicts {name: , id:} to hold member info (name and ID)
     members_in_cols = []
-    for member in expenses_df[cols_member_names].columns:
+    for member in expenses_df[cols_member_names].columns: # We parse the columns bc the user decides which members to include in cols
         members_in_cols.append(
             {
                 'name' : member[1:] ,
-                'id' :  int(members_df[members_df['Name'] == member[1:]]['ID'].values[0]) # Search in column'Name' of members_df and return the column 'ID'
+                'id' :  int(members_df[members_df['Name'] == member[1:]]['ID'].values[0]) # Filter members_df where it's equal to the member name and return the column 'ID'
             })
 
     # Payer ID
     expenses_df = expenses_df.merge(members_df, how = 'left', left_on = "Paid by", right_on = 'Name').rename(columns = {'ID_x': "ID", 'ID_y': "Payer ID"})
 
-
     # Calculate share owed and paid for a given member
     def get_share_owed(row, member_name):
-        """ Calculate share owed for a given expense (row) and user"""
+        """ Calculate share owed for a given expense (row) and user (member name), taking into account split type"""
+        member_cell_value = row[member_name]
         if row['All equal'] == True: # Default: Split equally among all group members
-            return row['Amount'] / len(group.members)
-        elif pd.isna(row[member_name]):
+            return round(row['Amount'] / len(group.members), 2)
+        elif pd.isna(member_cell_value):
             return 0
         else:
             if row["Split type"] == "share":
-                return round((row[member_name]/100)*row['Amount'], 2) # e.g. share = 10 --> 0.1*amount
+                share_decimals = member_cell_value/100
+                return round(share_decimals * row['Amount'], 2) # e.g. share = 10 --> 0.1 * total amount of expense
             elif row["Split type"] == "amount":
-                return row[member_name] # e.g. share_owed for Javier is the value under column "_Javier"
+                return member_cell_value # e.g. share_owed for Javier is the value under column "_Javier"
             elif row["Split type"] == "equal":
                 members_to_split = row[cols_member_names].count() # Count members participating in this expense
                 return round(row['Amount'] / members_to_split, 2)
@@ -159,14 +169,15 @@ def batch_upload_process(request: Request, db: Session = Depends(get_db),group_f
     # Round share owed if it doesn't add up
     def assign_rounding_diff(row):
         """Assign the rounding difference to a random member within the expense
-        Add up share_owed of all members and compare with total amount: If the difference is due to rounding (<0.02), add/subtract this from a random user within the expense
+        Add up share_owed of all members and compare with total amount: If the difference is due to rounding (<0.02), subtract this from a random user within the expense
         """
-        share_owed_columns = [f"{col_name[1:]}_share_owed" for col_name in cols_member_names if row[f"{col_name[1:]}_share_owed"] > 0] # Members in this expense
+        share_owed_columns = [f"{col_name[1:]}_share_owed" for col_name in cols_member_names if row[f"{col_name[1:]}_share_owed"] > 0] # List of columns to parse in this expense
         sum_share_owed = row[share_owed_columns].sum()
         diff = sum_share_owed - row['Amount']
         if abs(diff) > 0 and abs(diff) < 0.02:
+            diff_round = round(diff, 2)
             random_member = random.choice(share_owed_columns)
-            row[random_member] += -diff # Subtract the difference
+            row[random_member] += -diff_round # Subtract the difference
         return row
 
     expenses_df = expenses_df.apply(assign_rounding_diff, axis = 1)
