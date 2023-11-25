@@ -3,7 +3,7 @@
 *.pyc
 __pycache__/
 .vscode/
-test/
+manual_test_files/
 instance/
 node_modules/
 env/
