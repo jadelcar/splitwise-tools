@@ -31,3 +31,4 @@ config.py
 nosetests.xml
 coverage.xml
 *.log
+main_mre.py
