@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Depends, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.requests import Request
+from fastapi.testclient import TestClient
 
 from sqlalchemy.orm import Session
 
@@ -32,6 +33,18 @@ from constants import *
 
 # Create app
 app = FastAPI(debug=True)
+
+# Add Session middleware
+app.add_middleware(SessionMiddleware, secret_key="some-random-string")
+
+# Middleware to override the session value in the response so it always remains the same in all requests
+@app.middleware("http") # https://stackoverflow.com/a/73924330/19667698
+async def some_middleware(request: Request, call_next):
+    response = await call_next(request)
+    session = request.cookies.get('session')
+    if session:
+        response.set_cookie(key='session', value=request.cookies.get('session'), httponly=True)
+    return response
 
 # Configure database
 models.Base.metadata.create_all(bind = engine) # Creates DB if not yet created
@@ -62,22 +75,27 @@ def home(request: Request):
 
 @app.get("/login_sw")
 def login_sw(request: Request):
-    sObj = Splitwise(Config.consumer_key, Config.consumer_secret) # Special object for authentication in Splitwise
-    url, secret = sObj.getAuthorizeURL() # Method in sObj 'getAuthorizeURL()' returns the URL for authorizing the app
+    sObj = Splitwise(Config.consumer_key, Config.consumer_secret)
+    url, state = sObj.getOAuth2AuthorizeURL("http://localhost:8000/authorize") 
     
-    request.session['secret'] = secret 
+    request.session['state'] = state # Store state in session to double check later
     
     return RedirectResponse(url) #Redirect user to SW authorization website. After login, redirects user to the URL defined in the app's settings
 
 @app.get("/authorize", response_class = HTMLResponse)
-def authorize(request: Request, oauth_token: str, oauth_verifier: str):
+def authorize(request: Request, code: str, state: str):
+    
     # Get parameters needed to obtain the access token
     sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
     
-    user_secret = request.session['secret']
+    # Check that state is the same
+    state_previous = request.session.get('state')
+    if state_previous != state:
+        Exception("State is not the same")
+
+    access_token = sObj.getOAuth2AccessToken(code, "http://localhost:8000/authorize") # function defined elsewhere
+    sObj.setOAuth2AccessToken(access_token)
     
-    access_token = sObj.getAccessToken(oauth_token, user_secret, oauth_verifier)
-    sObj.setAccessToken(access_token)
     # Store user data and tokens in session
     request.session['access_token'] = access_token
     current_user = sObj.getCurrentUser()
@@ -427,8 +445,16 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email already registered")
     return crud.create_user(db=db, user=user)
 
-# Add middleware
-app.add_middleware(SessionMiddleware, secret_key="some-random-string") # https://github.com/tiangolo/fastapi/issues/4746#issuecomment-1133866839
+# Add test client and first test
+client = TestClient(app)
+
+
+def test_read_main():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json() == {"msg": "Hello World"}
+
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["sql_app",""])
