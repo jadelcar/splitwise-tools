@@ -23,7 +23,7 @@ def get_access_token(request: Request):
     # except:
     # raise Exception("Could not obtain the Splitwise object, consumer key/secret has expired")
     # try:
-    sObj.setAccessToken(request.session['access_token'])
+    sObj.setOAuth2AccessToken(request.session.get('access_token'))
     return sObj
     # except:
     # raise Exception("Could not set access token. Maybe the user has not authorized Splitwise or the session has expired")
