@@ -37,15 +37,6 @@ middleware = [
 ]
 app = FastAPI(middleware=middleware)
 
-# # Middleware to override the session value in the response so it always remains the same in all requests
-# @app.middleware("http") # https://stackoverflow.com/a/73924330/19667698
-# async def some_middleware(request: Request, call_next):
-#     response = await call_next(request)
-#     session = request.cookies.get('session')
-#     if session:
-#         response.set_cookie(key='session', value=request.cookies.get('session'), httponly=True)
-#     return response
-
 # Configure templating
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="static/templates")
