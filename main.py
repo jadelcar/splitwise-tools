@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 import starlette.status as status
 from starlette_core.templating import Jinja2Templates
 
+from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from sql_app.database import engine, SessionLocal
@@ -31,20 +32,23 @@ from openpyxl.styles import Font, Border, Side
 from helpers import *
 from constants import *
 
-# Create app
-app = FastAPI(debug=True)
+middleware = [
+    Middleware(SessionMiddleware, secret_key='super-secret')
+]
+app = FastAPI(middleware=middleware)
 
-# Add Session middleware
-app.add_middleware(SessionMiddleware, secret_key="some-random-string")
+# # Middleware to override the session value in the response so it always remains the same in all requests
+# @app.middleware("http") # https://stackoverflow.com/a/73924330/19667698
+# async def some_middleware(request: Request, call_next):
+#     response = await call_next(request)
+#     session = request.cookies.get('session')
+#     if session:
+#         response.set_cookie(key='session', value=request.cookies.get('session'), httponly=True)
+#     return response
 
-# Middleware to override the session value in the response so it always remains the same in all requests
-@app.middleware("http") # https://stackoverflow.com/a/73924330/19667698
-async def some_middleware(request: Request, call_next):
-    response = await call_next(request)
-    session = request.cookies.get('session')
-    if session:
-        response.set_cookie(key='session', value=request.cookies.get('session'), httponly=True)
-    return response
+# Configure templating
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="static/templates")
 
 # Configure database
 models.Base.metadata.create_all(bind = engine) # Creates DB if not yet created
@@ -58,9 +62,7 @@ def get_db():
     finally:
         db.close()
 
-# Configure templating
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="static/templates")
+
 
 
 """       ----------           PATHS       -----------            """
@@ -76,7 +78,7 @@ def home(request: Request):
 @app.get("/login_sw")
 def login_sw(request: Request):
     sObj = Splitwise(Config.consumer_key, Config.consumer_secret)
-    url, state = sObj.getOAuth2AuthorizeURL("http://localhost:8000/authorize") 
+    url, state = sObj.getOAuth2AuthorizeURL("http://127.0.0.1:8000/authorize") 
     
     request.session['state'] = state # Store state in session to double check later
     
@@ -90,10 +92,12 @@ def authorize(request: Request, code: str, state: str):
     
     # Check that state is the same
     state_previous = request.session.get('state')
+    print(f"Previous state: {state_previous}")
+    print(f"State: {state}")
     if state_previous != state:
-        Exception("State is not the same")
+        raise Exception("State is not the same")
 
-    access_token = sObj.getOAuth2AccessToken(code, "http://localhost:8000/authorize") # function defined elsewhere
+    access_token = sObj.getOAuth2AccessToken(code, "http://127.0.0.1:8000/authorize") # function defined elsewhere
     sObj.setOAuth2AccessToken(access_token)
     
     # Store user data and tokens in session
@@ -444,6 +448,10 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     if db_user: #If db_user exists (i.e. the search by email return something)
         raise HTTPException(status_code=400, detail="Email already registered")
     return crud.create_user(db=db, user=user)
+
+
+
+
 
 # Add test client and first test
 client = TestClient(app)
