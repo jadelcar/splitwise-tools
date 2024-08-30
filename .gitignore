@@ -21,6 +21,8 @@ classes.py
 app.py
 previous_versions/
 config.py
+tests/
+instructions.md
 
 # Other types of files
 
