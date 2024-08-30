@@ -158,19 +158,18 @@ def batch_upload_process(request: Request, db: Session = Depends(get_db),group_f
     def get_share_owed(row, member_name):
         """ Calculate share owed for a given expense (row) and user (member name), taking into account split type"""
         member_cell_value = row[member_name]
-        if row['All equal'] == True: # Default: Split equally among all group members
-            return round(row['Amount'] / len(group.members), 2)
-        elif pd.isna(member_cell_value):
+        if pd.isna(member_cell_value):
             return 0
+        
+        if row['All equal']:
+            return round(row['Amount'] / len(group.members), 2)
+        elif row["Split type"] == "share":
+            return round(member_cell_value / 100 * row['Amount'], 2)
+        elif row["Split type"] == "amount":
+            return member_cell_value
         else:
-            if row["Split type"] == "share":
-                share_decimals = member_cell_value/100
-                return round(share_decimals * row['Amount'], 2) # e.g. share = 10 --> 0.1 * total amount of expense
-            elif row["Split type"] == "amount":
-                return member_cell_value # e.g. share_owed for Javier is the value under column "_Javier"
-            elif row["Split type"] == "equal":
-                members_to_split = row[cols_member_names].count() # Count members participating in this expense
-                return round(row['Amount'] / members_to_split, 2)
+            # Handle unknown split type
+            raise ValueError(f"Unknown split type: {row['Split type']}")
         
     for col_name in cols_member_names:
         # Share paid
