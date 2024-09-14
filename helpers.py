@@ -55,7 +55,7 @@ def group_to_dict(group: Group):
         "members" : [(member.id, member.first_name, member.last_name) for member in group.members]
     }
 
-def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: Group) -> Tuple[dict,  list, int]:
+def DescribeErrors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: Group) -> Tuple[dict,  list, int]:
     """ Describe all errors in the excel file. Returns
 
     We create `error_master`, a dict of dicts. Each dict refers to one type of error (description too long, date format, wrong group member etc.) and contains:

@@ -77,14 +77,22 @@ def login_sw(request: Request):
 
 @app.get("/authorize", response_class = HTMLResponse)
 def authorize(request: Request, code: str, state: str):
+    """
+    The user is redirected here after granting access to the app in Splitwise.
+    
+    Parameters:
+    code (str): authorization code received from SW
+    state (str): state that was sent in the initial request to SW
+    
+    Returns:
+    HTMLResponse: redirects user to 'authorize_success.html'
+    """
     
     # Get parameters needed to obtain the access token
     sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
     
     # Check that state is the same
     state_previous = request.session.get('state')
-    print(f"Previous state: {state_previous}")
-    print(f"State: {state}")
     if state_previous != state:
         raise Exception("State is not the same")
 
@@ -100,6 +108,12 @@ def authorize(request: Request, code: str, state: str):
 
 @app.get("/logout")
 def logout(request: Request):
+    """
+    Logout user by clearing the session and redirecting to the home page.
+    
+    Returns:
+    RedirectResponse: redirects user to the home page
+    """
     request.session.clear()
     return RedirectResponse("/")
 
@@ -121,20 +135,16 @@ def batch_upload_process(request: Request, db: Session = Depends(get_db),group_f
     """
     Process the data uploaded
     """
+    # Access tokens
     sObj = get_access_token(request)
     current_user = sObj.getCurrentUser()
     
-    # Fetch group info
-    group = sObj.getGroup(group_for_upload)
-    
-    # Erase from session any previous upload
-    request.session.pop('upload_id', None)
-
-    # Import and parse user file 
-    file = batch_expenses_file.file.read()
+    group = sObj.getGroup(group_for_upload) # Fetch group info
+    request.session.pop('upload_id', None) # Erase from session any previous upload
+    file = batch_expenses_file.file.read() # Import and parse user file 
     
     expenses_df = pd.read_excel(file, sheet_name = "Expenses") # Import expenses sheet
-    members_df = pd.read_excel(file, sheet_name = "Members") #Import the members sheet
+    members_df = pd.read_excel(file, sheet_name = "Members") # Import the members sheet
     
     # Parse the expenses sheet
     cols_member_names = list(expenses_df.filter(regex='^_', axis=1)) # Make a list with member names
@@ -144,42 +154,50 @@ def batch_upload_process(request: Request, db: Session = Depends(get_db),group_f
         
     # Create a list of dicts {name: , id:} to hold member info (name and ID)
     members_in_cols = []
-    for member in expenses_df[cols_member_names].columns: # We parse the columns bc the user decides which members to include in cols
+    for member_name in expenses_df[cols_member_names].columns:
+        member_info = members_df[members_df['Name'] == member_name[1:]]
         members_in_cols.append(
             {
-                'name' : member[1:] ,
-                'id' :  int(members_df[members_df['Name'] == member[1:]]['ID'].values[0]) # Filter members_df where it's equal to the member name and return the column 'ID'
-            })
+                'name': member_name[1:],
+                'id': int(member_info['ID'].values[0])
+            }
+        )
 
     # Payer ID
-    expenses_df = expenses_df.merge(members_df, how = 'left', left_on = "Paid by", right_on = 'Name').rename(columns = {'ID_x': "ID", 'ID_y': "Payer ID"})
+    expenses_df = expenses_df.merge(members_df, 
+                                    how = 'left', 
+                                    left_on = "Paid by", 
+                                    right_on = 'Name').rename(
+                                        columns = {'ID_x': "ID", 'ID_y': "Payer ID"}
+                                        )
 
     # Calculate share owed and paid for a given member
-    def get_share_owed(row, member_name):
+    def getShareOwed(row, member_name, cols_member_names):
         """ Calculate share owed for a given expense (row) and user (member name), taking into account split type"""
         member_cell_value = row[member_name]
         if pd.isna(member_cell_value):
             return 0
-        
-        if row['All equal']:
-            return round(row['Amount'] / len(group.members), 2)
+        elif row['All equal']:
+            return round(row['Amount'] / len(group.members), 2) # Divide equally by the number of members in group
         elif row["Split type"] == "share":
-            return round(member_cell_value / 100 * row['Amount'], 2)
+            return round(member_cell_value / 100 * row['Amount'], 2) # Divide based on %
         elif row["Split type"] == "amount":
-            return member_cell_value
+            return member_cell_value # Assign the amount specified
+        elif row["Split type"] == "equal":
+            members_for_division = [member['name'] for member in members_in_cols if not pd.isna(row[f"_{member['name']}"])]
+            return round(row['Amount'] / len(members_for_division), 2)
         else:
-            # Handle unknown split type
-            raise ValueError(f"Unknown split type: {row['Split type']}")
+            return 0 # An error will be raise to the user
         
     for col_name in cols_member_names:
         # Share paid
         expenses_df[f'{col_name[1:]}_share_paid'] = np.where(expenses_df["Paid by"] == col_name[1:],  expenses_df['Amount'], 0)
 
         # Share owed
-        expenses_df[f'{col_name[1:]}_share_owed'] = expenses_df.apply(get_share_owed, axis = 1, member_name = f"_{col_name[1:]}")
+        expenses_df[f'{col_name[1:]}_share_owed'] = expenses_df.apply(getShareOwed, axis = 1, member_name = f"_{col_name[1:]}", cols_member_names=cols_member_names)
 
     # Round share owed if it doesn't add up
-    def assign_rounding_diff(row):
+    def AssignRoundingDiff(row):
         """Assign the rounding difference to a random member within the expense
         Add up share_owed of all members and compare with total amount: If the difference is due to rounding (<0.02), subtract this from a random user within the expense
         """
@@ -192,10 +210,10 @@ def batch_upload_process(request: Request, db: Session = Depends(get_db),group_f
             row[random_member] += -diff_round # Subtract the difference
         return row
 
-    expenses_df = expenses_df.apply(assign_rounding_diff, axis = 1)
+    expenses_df = expenses_df.apply(AssignRoundingDiff, axis = 1)
 
     # Obtain error message
-    errors, error_messages, error_count = describe_errors(expenses_df, members_df, group)
+    errors, error_messages, error_count = DescribeErrors(expenses_df, members_df, group)
 
     # Store data temporarily so it can be pushed later
     expenses = expenses_df.to_dict('records')
