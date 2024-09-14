@@ -37,6 +37,8 @@ middleware = [
 ]
 app = FastAPI(middleware=middleware)
 
+URL = "https://splitwise-tools.onrender.com/"
+
 # Configure templating
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="static/templates")
@@ -69,7 +71,7 @@ def home(request: Request):
 @app.get("/login_sw")
 def login_sw(request: Request):
     sObj = Splitwise(Config.consumer_key, Config.consumer_secret)
-    url, state = sObj.getOAuth2AuthorizeURL("http://127.0.0.1:8000/authorize") 
+    url, state = sObj.getOAuth2AuthorizeURL(URL + "/authorize") 
     
     request.session['state'] = state # Store state in session to double check later
     
@@ -96,7 +98,7 @@ def authorize(request: Request, code: str, state: str):
     if state_previous != state:
         raise Exception("State is not the same")
 
-    access_token = sObj.getOAuth2AccessToken(code, "http://127.0.0.1:8000/authorize") # function defined elsewhere
+    access_token = sObj.getOAuth2AccessToken(code, URL + "/authorize") # function defined elsewhere
     sObj.setOAuth2AccessToken(access_token)
     
     # Store user data and tokens in session
