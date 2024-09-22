@@ -1,5 +1,6 @@
 import uvicorn
 import random
+import os
 
 from fastapi import FastAPI, HTTPException, Depends, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
@@ -37,7 +38,10 @@ middleware = [
 ]
 app = FastAPI(middleware=middleware)
 
-URL = "https://splitwise-tools.onrender.com/"
+if os.environ.get('USERNAME') == "jadel":
+    URL = "http://localhost:8000"
+elif os.environ.get('HOSTING') == 'Render':
+    URL = "https://splitwise-tools.onrender.com"
 
 # Configure templating
 app.mount("/static", StaticFiles(directory="static"), name="static")
