@@ -38,7 +38,10 @@ middleware = [
 ]
 app = FastAPI(middleware=middleware)
 
+print("Username: ", os.environ.get('USERNAME'))
 if os.environ.get('USERNAME') == "jadel":
+    URL = "http://localhost:8000"
+elif os.environ.get('USER') == 'jadelcar':
     URL = "http://localhost:8000"
 elif os.environ.get('HOSTING') == 'Render':
     URL = "https://splitwise-tools.onrender.com"
