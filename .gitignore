@@ -23,6 +23,7 @@ previous_versions/
 config.py
 tests/
 instructions.md
+venv/*
 
 # Other types of files
 
