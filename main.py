@@ -222,7 +222,7 @@ def batch_upload_process(request: Request, db: Session = Depends(get_db),group_f
     expenses_df = expenses_df.apply(AssignRoundingDiff, axis = 1)
 
     # Obtain error message
-    errors, error_messages, error_count = DescribeErrors(expenses_df, members_df, group)
+    errors, error_messages, error_count = describe_errors(expenses_df, members_df, group)
 
     # Store data temporarily so it can be pushed later
     expenses = expenses_df.to_dict('records')
