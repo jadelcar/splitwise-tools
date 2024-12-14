@@ -1,4 +1,3 @@
-
 import pandas as pd
 
 from fastapi.templating import Jinja2Templates
@@ -8,18 +7,23 @@ from typing import Tuple
 # Configure templating
 templates = Jinja2Templates(directory="static/templates")
 
-from functools import wraps
 from splitwise import Splitwise
 from splitwise.group import Group
-import config as Config
-
+from config.settings import get_settings
 from constants import *
+
+
+settings = get_settings()
+URL = f"http://{settings.APP_HOST}:{settings.APP_PORT}"
+CONSUMER_KEY = settings.CONSUMER_KEY
+CONSUMER_SECRET = settings.CONSUMER_SECRET
+
 
 
 def get_access_token(request: Request):
     """ Obtain Splitwise object (only if there is an access token """
     # try:
-    sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
+    sObj = Splitwise(CONSUMER_KEY, CONSUMER_SECRET)
     # except:
     # raise Exception("Could not obtain the Splitwise object, consumer key/secret has expired")
     # try:

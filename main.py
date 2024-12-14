@@ -1,3 +1,4 @@
+import sys
 import uvicorn
 import random
 import os
@@ -32,19 +33,17 @@ from openpyxl.styles import Font, Border, Side
 
 from helpers import *
 from constants import *
+from config.settings import get_settings
 
 middleware = [
     Middleware(SessionMiddleware, secret_key='super-secret')
 ]
 app = FastAPI(middleware=middleware)
 
-print("Username: ", os.environ.get('USERNAME'))
-if os.environ.get('USERNAME') == "jadel":
-    URL = "http://localhost:8000"
-elif os.environ.get('USER') == 'jadelcar':
-    URL = "http://localhost:8000"
-elif os.environ.get('HOSTING') == 'Render':
-    URL = "https://splitwise-tools.onrender.com"
+settings = get_settings()
+URL = f"http://{settings.APP_HOST}:{settings.APP_PORT}"
+CONSUMER_KEY = settings.CONSUMER_KEY
+CONSUMER_SECRET = settings.CONSUMER_SECRET
 
 # Configure templating
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -77,7 +76,7 @@ def home(request: Request):
 
 @app.get("/login_sw")
 def login_sw(request: Request):
-    sObj = Splitwise(Config.consumer_key, Config.consumer_secret)
+    sObj = Splitwise(CONSUMER_KEY,  CONSUMER_SECRET)
     url, state = sObj.getOAuth2AuthorizeURL(URL + "/authorize") 
     
     request.session['state'] = state # Store state in session to double check later
@@ -98,14 +97,14 @@ def authorize(request: Request, code: str, state: str):
     """
     
     # Get parameters needed to obtain the access token
-    sObj = Splitwise(Config.consumer_key,Config.consumer_secret)
+    sObj = Splitwise(CONSUMER_KEY, CONSUMER_SECRET)
     
     # Check that state is the same
     state_previous = request.session.get('state')
     if state_previous != state:
         raise Exception("State is not the same")
 
-    access_token = sObj.getOAuth2AccessToken(code, URL + "/authorize") # function defined elsewhere
+    access_token = sObj.getOAuth2AccessToken(code, URL + "/authorize")
     sObj.setOAuth2AccessToken(access_token)
     
     # Store user data and tokens in session
@@ -480,6 +479,12 @@ def test_read_main():
     assert response.json() == {"msg": "Hello World"}
 
 
-
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["sql_app",""])
+    settings = get_settings()
+    uvicorn.run(
+        "main:app",
+        host=settings.APP_HOST,
+        port=settings.APP_PORT,
+        reload=True,
+        reload_dirs=["sql_app",""]
+    )
