@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.requests import Request
 from fastapi.testclient import TestClient
-from fastapi.templating import Jinja2Templates
+
 
 from sqlalchemy.orm import Session
 
@@ -42,6 +42,9 @@ middleware = [
 ]
 app = FastAPI(middleware=middleware)
 
+# Include routers
+app.include_router(auth.router)
+
 # Configure templating
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -61,61 +64,6 @@ models.Base.metadata.create_all(bind = database.engine) # Creates DB if not yet 
 def home(request: Request):
     """Return home page """
     return templates.TemplateResponse("home.html", {"request": request})
-
-
-"""       ----------           Authentication       -----------            """
-
-@app.get("/login_sw")
-def login_sw(request: Request):
-    sObj = Splitwise(CONSUMER_KEY,  CONSUMER_SECRET)
-    url, state = sObj.getOAuth2AuthorizeURL(URL + "/authorize") 
-    
-    request.session['state'] = state # Store state in session to double check later
-    
-    return RedirectResponse(url) #Redirect user to SW authorization website. After login, redirects user to the URL defined in the app's settings
-
-@app.get("/authorize", response_class = HTMLResponse)
-def authorize(request: Request, code: str, state: str):
-    """
-    The user is redirected here after granting access to the app in Splitwise.
-    
-    Parameters:
-    code (str): authorization code received from SW
-    state (str): state that was sent in the initial request to SW
-    
-    Returns:
-    HTMLResponse: redirects user to 'authorize_success.html'
-    """
-    
-    # Get parameters needed to obtain the access token
-    sObj = Splitwise(CONSUMER_KEY, CONSUMER_SECRET)
-    
-    # Check that state is the same
-    state_previous = request.session.get('state')
-    if state_previous != state:
-        raise Exception("State is not the same")
-
-    access_token = sObj.getOAuth2AccessToken(code, URL + "/authorize")
-    sObj.setOAuth2AccessToken(access_token)
-    
-    # Store user data and tokens in session
-    request.session['access_token'] = access_token
-    current_user = sObj.getCurrentUser()
-    request.session['user_id'] = current_user.id
-    request.session['user_fname'] = current_user.first_name
-    return templates.TemplateResponse("authorize_success.html", {"request": request})
-
-@app.get("/logout")
-def logout(request: Request):
-    """
-    Logout user by clearing the session and redirecting to the home page.
-    
-    Returns:
-    RedirectResponse: redirects user to the home page
-    """
-    request.session.clear()
-    return RedirectResponse("/")
-
 
 """       ----------           Retrieve data       -----------            """
 
