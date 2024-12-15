@@ -1,67 +1,58 @@
-import sys
 import uvicorn
 import random
-import os
 
 from fastapi import FastAPI, HTTPException, Depends, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.requests import Request
 from fastapi.testclient import TestClient
+from fastapi.templating import Jinja2Templates
 
 from sqlalchemy.orm import Session
 
 import starlette.status as status
-from starlette_core.templating import Jinja2Templates
-
 from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
-
-from sql_app.database import engine, SessionLocal
-from sql_app import crud, models, schemas
 
 from splitwise import Splitwise
 from splitwise.expense import Expense
 from splitwise.user import ExpenseUser
 
 from decimal import *
-import config as Config
 import pandas as pd
 import numpy as np
 from openpyxl import Workbook
 from openpyxl.styles import Font, Border, Side
 
-from helpers import *
-from constants import *
-from config.settings import get_settings
+# Internal imports
 
+from core.constants import *
+from core.config.settings import get_settings
+from api.routes import auth
+from core.exceptions import handlers
+from services.helpers.expense_utils import *
+
+# from db.database import engine, SessionLocal, database.get_db
+from db import crud, models, schemas, database
+
+# Set up FastAPI
 middleware = [
     Middleware(SessionMiddleware, secret_key='super-secret')
 ]
 app = FastAPI(middleware=middleware)
+
+# Configure templating
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="static/templates")
 
 settings = get_settings()
 URL = f"http://{settings.APP_HOST}:{settings.APP_PORT}"
 CONSUMER_KEY = settings.CONSUMER_KEY
 CONSUMER_SECRET = settings.CONSUMER_SECRET
 
-# Configure templating
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="static/templates")
 
 # Configure database
-models.Base.metadata.create_all(bind = engine) # Creates DB if not yet created
-
-# Dependency
-def get_db():
-    """ Opens a session and makes sure it's closed at the end"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
+models.Base.metadata.create_all(bind = database.engine) # Creates DB if not yet created
 
 
 """       ----------           PATHS       -----------            """
@@ -133,18 +124,18 @@ def batch_upload_show_form(request: Request):
     """
     Show form for uploading an excel file
     """
-    sObj = get_access_token(request)
+    sObj = auth.get_access_token(request)
     groups = sObj.getGroups()
     return templates.TemplateResponse("batch_upload.html", {"request": request, "groups" : groups})
 
 
 @app.post("/batch_upload_process", response_class = HTMLResponse)
-def batch_upload_process(request: Request, db: Session = Depends(get_db),group_for_upload = Form(), batch_expenses_file : UploadFile = File(...)):
+def batch_upload_process(request: Request, db: Session = Depends(database.get_db),group_for_upload = Form(), batch_expenses_file : UploadFile = File(...)):
     """
     Process the data uploaded
     """
     # Access tokens
-    sObj = get_access_token(request)
+    sObj = auth.get_access_token(request)
     current_user = sObj.getCurrentUser()
     
     group = sObj.getGroup(group_for_upload) # Fetch group info
@@ -248,9 +239,9 @@ def batch_upload_process(request: Request, db: Session = Depends(get_db),group_f
     return templates.TemplateResponse("upload_edit.html", context)
 
 @app.post('/push_expenses/{upload_id}', response_class = HTMLResponse)
-def push_expenses(request: Request, upload_id: int, db: Session = Depends(get_db)):
+def push_expenses(request: Request, upload_id: int, db: Session = Depends(database.get_db)):
 
-    sObj = get_access_token(request)
+    sObj = auth.get_access_token(request)
         
     upload = crud.get_upload_by_id(db, upload_id = upload_id)
     expenses = crud.get_expenses_by_upload_id(db, upload_id = upload_id)
@@ -310,10 +301,10 @@ def push_expenses(request: Request, upload_id: int, db: Session = Depends(get_db
 
 """       ----------           Create data       -----------            """
 @app.get("/create_upload", response_class=HTMLResponse)
-def create_upload(request: Request, db: Session = Depends(get_db)):
+def create_upload(request: Request, db: Session = Depends(database.get_db)):
     """Create a new upload"""
     try:
-        sObj = get_access_token(request)
+        sObj = auth.get_access_token(request)
         current_user = sObj.getCurrentUser().getId()
     except:
         current_user = 7357
@@ -321,10 +312,10 @@ def create_upload(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("home.html", {"request": request, "new_upload" : new_upload})
 
 @app.post("/create_expense", response_class=HTMLResponse)
-def create_expense(request: Request, db: Session = Depends(get_db)):
+def create_expense(request: Request, db: Session = Depends(database.get_db)):
     """Create a new expense"""
     try:
-        sObj = get_access_token(request)
+        sObj = auth.get_access_token(request)
         current_user = sObj.getCurrentUser().getId()
     except:
         current_user = 7357
@@ -335,9 +326,9 @@ def create_expense(request: Request, db: Session = Depends(get_db)):
 """       ----------           Retrieve data       -----------            """
 
 @app.get("/uploads", response_class=HTMLResponse)
-def get_groups_by_id(request: Request, db: Session = Depends(get_db)):
+def get_groups_by_id(request: Request, db: Session = Depends(database.get_db)):
     """Get uploads of the current user logged in the app, using it's user ID"""
-    sObj = get_access_token(request)
+    sObj = auth.get_access_token(request)
     sObj.getCurrentUser().id
     uploads = crud.get_uploads(db)
     return templates.TemplateResponse("uploads.html", {"request": request, "uploads" : uploads})
@@ -345,14 +336,14 @@ def get_groups_by_id(request: Request, db: Session = Depends(get_db)):
 @app.get("/groups", response_class=HTMLResponse)
 def get_groups_by_id(request: Request):
     """Get groups of the current user logged in the app, using it's app user ID"""
-    sObj = get_access_token(request)
+    sObj = auth.get_access_token(request)
     groups = sObj.getGroups()
     return templates.TemplateResponse("groups.html", {"request": request, "groups" : groups})
 
 @app.get("/template/{group_id}")
 def get_template_by_group_id(request: Request, group_id: int):
     """Create a template excel for a group"""
-    sObj = get_access_token(request)
+    sObj = auth.get_access_token(request)
     group = sObj.getGroup(group_id)
     members = group.members
     
@@ -417,7 +408,7 @@ def register_show_form(request: Request):
     return templates.TemplateResponse("register.html", {"request": request})
 
 @app.post("/register_submit/")
-def register(request: Request, username: str = Form(), password: str = Form(), confirmation: str = Form(), db: Session = Depends(get_db)):
+def register(request: Request, username: str = Form(), password: str = Form(), confirmation: str = Form(), db: Session = Depends(database.get_db)):
     """ Register user using data in their registration form"""
     
     # Obtain user's data entered in the form
@@ -428,14 +419,14 @@ def register(request: Request, username: str = Form(), password: str = Form(), c
     # Check if the username is being used
     db_user_byusername = crud.get_user_by_username(db, username=username)
     if db_user_byusername:
-        return apology("That username is taken...", request, 400)
+        return handlers.apology("That username is taken...", request, 400)
 
     # Validate data
     elif username=="" or password=="" or confirmation=="":
         # If at least one of the above are missing
-        return apology("You didn't complete all the fields, right?", request, 400)
+        return handlers.apology("You didn't complete all the fields, right?", request, 400)
     elif password != confirmation :
-        return apology("Passwords don't match bro", request, 400)
+        return handlers.apology("Passwords don't match bro", request, 400)
 
     # Create user in database
     try:
@@ -445,20 +436,20 @@ def register(request: Request, username: str = Form(), password: str = Form(), c
         request.session['user_id'] = new_db_user.id # Store the user id in session 
         request.session['username'] = new_db_user.username # Store the user id in session 
     except:
-        return apology("Could not insert you in the database", request, 400)
+        return handlers.apology("Could not insert you in the database", request, 400)
 
     # Redirect to home
     return RedirectResponse('/', status_code=status.HTTP_302_FOUND) # See https://stackoverflow.com/a/65512571/19667698
 
 @app.get("user/{username}")
-def get_user_byusername(username: int, db: Session = Depends(get_db)):
+def get_user_byusername(username: int, db: Session = Depends(database.get_db)):
     """Get user by its username"""
     user = crud.get_user_by_username(db, username = username).first()
     return user
 
 """ Create users and groups in database"""
 @app.post("/users/", response_model=schemas.User)
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+def create_user(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
     """Create a new user in database"""
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user: #If db_user exists (i.e. the search by email return something)
@@ -486,5 +477,5 @@ if __name__ == "__main__":
         host=settings.APP_HOST,
         port=settings.APP_PORT,
         reload=True,
-        reload_dirs=["sql_app",""]
+        reload_dirs=["db",""]
     )
