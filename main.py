@@ -30,6 +30,7 @@ from core.constants import *
 from core.config.settings import get_settings
 from api.routes import auth
 from core.exceptions import handlers
+from core.templates import templates
 from services.helpers.expense_utils import *
 
 # from db.database import engine, SessionLocal, database.get_db
@@ -43,7 +44,6 @@ app = FastAPI(middleware=middleware)
 
 # Configure templating
 app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="static/templates")
 
 settings = get_settings()
 URL = f"http://{settings.APP_HOST}:{settings.APP_PORT}"
