@@ -10,7 +10,6 @@ from core.templates import templates
 from core.config.settings import get_settings
 
 router = APIRouter(
-    prefix="/auth",
     tags=["authentication"]
 )
 
