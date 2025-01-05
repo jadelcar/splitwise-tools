@@ -1,5 +1,5 @@
 from typing import List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 
 # Group
@@ -14,9 +14,7 @@ class GroupCreate(GroupBase):
 # Model for reading: Vars that are only available after creation (e.g. id in the database)
 class Group(GroupBase):
     id: int
-    
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Friend
@@ -29,8 +27,8 @@ class Member(MemberBase):
     id: int
     group_id: List[Group] = []
     sw_tools_user: bool
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
+
 
 # User
 class UserBase(BaseModel):
@@ -45,15 +43,14 @@ class User(UserBase):
     sw_user_id: int
     member_of: List[Group] = []
     friends: List[Member] = []
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Expense
 class ExpenseBase(BaseModel):
     id: int
     
 class ExpenseCreate(ExpenseBase):
-    created_at: str = datetime.utcnow
+    created_at: datetime = datetime.now()
     
 class Expense(ExpenseBase): 
     sw_id: int
@@ -67,8 +64,7 @@ class Expense(ExpenseBase):
     sw_id: int
 
     members: List[Member] = []
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Upload
 class UploadBase(BaseModel):
@@ -80,5 +76,4 @@ class UploadCreate(UploadBase):
     
 class Upload(UploadBase): 
     expenses: List[Expense] = []
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
