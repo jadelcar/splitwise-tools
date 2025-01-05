@@ -22,7 +22,6 @@ classes.py
 app.py
 previous_versions/
 config.py
-tests/
 instructions.md
 venv/
 
