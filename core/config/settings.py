@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     CONSUMER_KEY: str
     CONSUMER_SECRET: str
 
+    TEST_USER : str
+    TEST_PASSWORD : str
+
     @property
     def BASE_URL(self) -> str:
         if self.ENV == "production":

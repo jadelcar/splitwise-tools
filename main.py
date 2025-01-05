@@ -63,7 +63,7 @@ models.Base.metadata.create_all(bind = database.engine) # Creates DB if not yet 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     """Return home page """
-    return templates.TemplateResponse("home.html", {"request": request})
+    return templates.TemplateResponse(request, "home.html")
 
 
 """       ----------           Create data       -----------            """
@@ -222,20 +222,6 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(database.get_db)
     if db_user: #If db_user exists (i.e. the search by email return something)
         raise HTTPException(status_code=400, detail="Email already registered")
     return crud.create_user(db=db, user=user)
-
-
-
-
-
-# Add test client and first test
-client = TestClient(app)
-
-
-def test_read_main():
-    response = client.get("/")
-    assert response.status_code == 200
-    assert response.json() == {"msg": "Hello World"}
-
 
 if __name__ == "__main__":
     settings = get_settings()
