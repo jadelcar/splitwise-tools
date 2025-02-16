@@ -23,7 +23,7 @@ def group_to_dict(group: Group):
         "members" : [(member.id, member.first_name, member.last_name) for member in group.members]
     }
 
-def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: Group) -> Tuple[dict,  list, int]:
+def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: Group, members_in_expenses_names : list = None) -> Tuple[dict,  list, int]:
     """ Describe all errors in the excel file. Returns
 
     We create `error_master`, a dict of dicts. Each dict refers to one type of error (description too long, date format, wrong group member etc.) and contains:
@@ -69,16 +69,13 @@ def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: 
     
     # File-level errors
     # Error 1: Friend names don't match in the two sheets
-    list_expenses = [m[1:] for m in expenses_df.filter(regex='^_', axis=1)]
-    list_expenses.sort()
-    list_members = members_df['Name'].values.tolist()
-    list_members.sort()
-    differences = set(list_expenses) ^ set(list_members) 
+    members_in_members_sheet_names = members_df['Name'].values.tolist()
+    differences = set(members_in_expenses_names) ^ set(members_in_members_sheet_names) 
     for diff in differences:
         add_to_error_list(error_type = "group_member", element_id = diff)
 
     # Error 2: Number of friends in file is different than total group members
-    if len(members_df['Name']) != len(group.members) : add_to_error_list("n_members", 1, errors)
+    if len(members_df['Name']) != len(group.members) : add_to_error_list("n_members", 1)
 
     # Expense-level errors
     
@@ -99,7 +96,7 @@ def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: 
             add_to_error_list("split_type_unsupported", row['ID'])
 
         # Error 6: Payer name does not match
-        if row["Paid by"] not in list_members:
+        if row["Paid by"] not in members_in_expenses_names:
             add_to_error_list("payer_name_error", element_id = row['ID'])
 
     # Build the error message, looping over the different errors

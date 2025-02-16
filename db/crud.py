@@ -120,15 +120,15 @@ def create_expense(db: Session, expense: dict, group_members : list,  creator_us
     db.commit()
     db.refresh(new_expense)
     # Create the expense-member relationship
-    for member in group_members:
-        share_paid = expense[f"{member['name']}_share_paid"] # e.g. Javier_share_paid
-        share_owed = expense[f"{member['name']}_share_owed"]
+    for member_id, member_info in group_members.items():
+        share_paid = expense[f"{member_info['name']}_share_paid"] # e.g. Javier_share_paid
+        share_owed = expense[f"{member_info['name']}_share_owed"]
         if (share_paid + share_owed) > 0: 
             # Get the member from database
-            new_member = get_member_by_sw_id(db, sw_id = member['id']) # If member not in DB, create it
+            new_member = get_member_by_sw_id(db, sw_id = member_id) # If member not in DB, create it
             if new_member == None:
                 # If it doesn't exist, create it
-                new_member = create_member(db, sw_id = member['id'], name = member['name'])
+                new_member = create_member(db, sw_id = member_id, name = member_info['name'])
             # Create the expense-member relationship
             create_expense_member(db, expense_id = new_expense.id, member_id = new_member.id, share_owed = share_owed, share_paid = share_paid)
     db.refresh(new_expense)

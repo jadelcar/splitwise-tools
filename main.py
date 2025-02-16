@@ -17,6 +17,7 @@ from splitwise import Splitwise
 from splitwise.expense import Expense
 from splitwise.user import ExpenseUser
 
+import os
 from decimal import *
 import pandas as pd
 import numpy as np
@@ -160,7 +161,11 @@ def get_template_by_group_id(request: Request, group_id: int):
         members_ws.cell(row = r, column = 2, value = member.id)
 
     # Save and return file
-    file_path = f"static/assets/group_templates/{group_id}.xlsx"
+    # Create the directory for group templates if it doesn't exist
+    group_templates_dir = "static/assets/group_templates"
+    if not os.path.exists(group_templates_dir):
+        os.makedirs(group_templates_dir)
+    file_path = f"{group_templates_dir}/{group_id}.xlsx"
     wb.save(file_path)
 
     headers = {'Content-Disposition': f'attachment; filename="template-{group.name}.xlsx"'}

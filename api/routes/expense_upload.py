@@ -10,6 +10,7 @@ from core.templates import templates
 from api.routes import auth
 from db import crud, models, schemas, database
 from services.helpers.expense_utils import describe_errors, group_to_dict
+import json
 
 from sqlalchemy.orm import Session
 
@@ -54,24 +55,44 @@ def batch_upload_process(request: Request, db: Session = Depends(database.get_db
     expenses_df = pd.read_excel(file, sheet_name = "Expenses") # Import expenses sheet
     members_df = pd.read_excel(file, sheet_name = "Members") # Import the members sheet
     
-    # Parse the expenses sheet
-    cols_member_names = list(expenses_df.filter(regex='^_', axis=1)) # Make a list with member names
-    expenses_df['Total Shares'] = expenses_df[cols_member_names].sum(axis = 1) # Create col to add shares from all members
+    members_json = json.loads(members_df.to_json(orient='records'))
+    members_json = {str(item['ID']): {'name': item['Name']} for item in members_json}
+    # Example:
+    # members_json{
+    #     '4822038': {'name': 'Javier D'},
+    #     '78448867': {'name': 'Xián'},
+    #     '78448868': {'name': 'Mario'},
+    #     '78448869': {'name': 'Faith'}
+    # }
     
-    expenses_df['All equal'] = expenses_df['All equal'].astype(str).apply(str.lower).replace(['y','n',''], [True, False, False]) # Read the 'All equal' columns
-        
-    # Create a list of dicts {name: , id:} to hold member info (name and ID)
-    members_in_cols = []
-    for member_name in expenses_df[cols_member_names].columns:
-        member_info = members_df[members_df['Name'] == member_name[1:]]
-        members_in_cols.append(
-            {
-                'name': member_name[1:],
-                'id': int(member_info['ID'].values[0])
-            }
-        )
+    # Parse the expenses sheet
+    members_in_expenses_names = expenses_df.filter(regex='^_', axis=1).columns.str.lstrip('_').tolist()
+    expenses_df = expenses_df.rename(columns = {member_name : member_name[1:] for member_name in expenses_df.filter(regex='^_', axis=1)})
 
-    # Payer ID
+    # Keep a separate dict only with the members present in the expenses sheet
+    members_in_expenses = {}
+    for id, member_info in members_json.items():
+        if member_info['name'] in members_in_expenses_names:
+            members_in_expenses[id] = member_info
+
+    expenses_df['Total Shares'] = expenses_df[members_in_expenses_names].sum(axis = 1) # Create col to add shares from all members
+    expenses_df['All equal'] = expenses_df['All equal'].astype(str).apply(str.lower).replace(['y','n',''], [True, False, False]) # Read the 'All equal' columns
+
+    # members_in_expenses = []
+    # for member_name in cols_member_names:
+    #     member_id = members_json[member_name[1:]]['ID']
+    #     # Search for the key where the value equals 'x'
+    #     key_with_value_x = next((key for key, value in members_json.items() if value['name'] == 'x'), None)
+
+    #     member_info = members_df[members_df['Name'] == member_name[1:]]
+    #     members_in_cols.append(
+    #         {
+    #             'name': member_name[1:],
+    #             'id': int(member_info['ID'].values[0])
+    #         }
+    #     )
+
+    # Payer ID, get it from the members sheet
     expenses_df = expenses_df.merge(members_df, 
                                     how = 'left', 
                                     left_on = "Paid by", 
@@ -79,8 +100,8 @@ def batch_upload_process(request: Request, db: Session = Depends(database.get_db
                                         columns = {'ID_x': "ID", 'ID_y': "Payer ID"}
                                         )
 
-    # Calculate share owed and paid for a given member
-    def getShareOwed(row, member_name, cols_member_names):
+    # Calculate share owed and paid for a given member and expense
+    def getShareOwed(row, member_name):
         """ Calculate share owed for a given expense (row) and user (member name), taking into account split type"""
         member_cell_value = row[member_name]
         if pd.isna(member_cell_value):
@@ -92,24 +113,24 @@ def batch_upload_process(request: Request, db: Session = Depends(database.get_db
         elif row["Split type"] == "amount":
             return member_cell_value # Assign the amount specified
         elif row["Split type"] == "equal":
-            members_for_division = [member['name'] for member in members_in_cols if not pd.isna(row[f"_{member['name']}"])]
+            members_for_division = [member['name'] for member in members_in_expenses.values() if not pd.isna(row[f"{member['name']}"])]
             return round(row['Amount'] / len(members_for_division), 2)
         else:
             return 0 # An error will be raise to the user
         
-    for col_name in cols_member_names:
+    for col_name in members_in_expenses_names:
         # Share paid
-        expenses_df[f'{col_name[1:]}_share_paid'] = np.where(expenses_df["Paid by"] == col_name[1:],  expenses_df['Amount'], 0)
+        expenses_df[f'{col_name}_share_paid'] = np.where(expenses_df["Paid by"] == col_name,  expenses_df['Amount'], 0)
 
         # Share owed
-        expenses_df[f'{col_name[1:]}_share_owed'] = expenses_df.apply(getShareOwed, axis = 1, member_name = f"_{col_name[1:]}", cols_member_names=cols_member_names)
+        expenses_df[f'{col_name}_share_owed'] = expenses_df.apply(getShareOwed, axis = 1, member_name = f"{col_name}")
 
     # Round share owed if it doesn't add up
     def AssignRoundingDiff(row):
         """Assign the rounding difference to a random member within the expense
         Add up share_owed of all members and compare with total amount: If the difference is due to rounding (<0.02), subtract this from a random user within the expense
         """
-        share_owed_columns = [f"{col_name[1:]}_share_owed" for col_name in cols_member_names if row[f"{col_name[1:]}_share_owed"] > 0] # List of columns to parse in this expense
+        share_owed_columns = [f"{col_name}_share_owed" for col_name in members_in_expenses_names if row[f"{col_name}_share_owed"] > 0] # List of columns to parse in this expense
         sum_share_owed = row[share_owed_columns].sum()
         diff = sum_share_owed - row['Amount']
         if abs(diff) > 0 and abs(diff) < 0.02:
@@ -121,7 +142,7 @@ def batch_upload_process(request: Request, db: Session = Depends(database.get_db
     expenses_df = expenses_df.apply(AssignRoundingDiff, axis = 1)
 
     # Obtain error message
-    errors, error_messages, error_count = describe_errors(expenses_df, members_df, group)
+    errors, error_messages, error_count = describe_errors(expenses_df, members_df, group, members_in_expenses_names)
 
     # Store data temporarily so it can be pushed later
     expenses = expenses_df.to_dict('records')
@@ -131,13 +152,13 @@ def batch_upload_process(request: Request, db: Session = Depends(database.get_db
         new_upload = crud.create_upload(db, creator_user_id = current_user.id, group_id = group.id)
              
         for exp in expenses:
-            crud.create_expense(db, upload_id = new_upload.id, expense = exp, group_members = members_in_cols, creator_user_id = current_user.id)
+            crud.create_expense(db, upload_id = new_upload.id, expense = exp, group_members = members_in_expenses, creator_user_id = current_user.id)
     
     # Prepare context to be passed to template
     context = {
         "request" : request,
         "group" : group_to_dict(group), 
-        "members_in_cols" : members_in_cols, 
+        "members_in_cols" : [{'id' : member_id, 'name' : member_info['name']} for member_id, member_info in members_in_expenses.items()], 
         "expenses" : expenses,
         "errors" : errors,
         "error_messages" : error_messages,
