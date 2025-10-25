@@ -22,51 +22,57 @@
 </div>
 {% endif %}
 
-<div class="table-responsive">
-The following expenses will be uploaded to group '{{ group['name'] }}' [ID: {{ group['id'] }}].
+<div class="container">The following expenses will be uploaded to group '{{ group['name'] }}' [ID: {{ group['id'] }}].</div>
 
-<div class="container">
-        <table class="table table-striped .w-auto text-left">
-        <thead>
+<table class="table table-responsive table-hover table-striped .w-auto text-left">
+    <thead>
+        <tr>
+            <th rowspan="2" >ID</th>
+            <th rowspan="2" >Description</th>
+            <th rowspan="2" >Date</th>
+            <th rowspan="2" >Amount</th>            
+            <th rowspan="2" >Currency</th>            
+            <th rowspan="2" >Paid by</th>            
+            <th rowspan="2" >All equal</th>            
+            <th rowspan="2" >Type of split</th>
+            <th colspan="{{ members_in_cols | length }}" class = "text-center">Share owed by member</th>
+            <th rowspan="2" >Total shares</th>
+            <!-- <th class="text-center">Actions</th> -->
+        </tr>
+        <tr>
+            {% for member in members_in_cols %}
+                <th>{{ member.name }}<br>[{{member.id}}]</th>
+            {% endfor %}
+        </tr>
+    </thead>
+            {% for expense in expenses %}
             <tr>
-                <th>ID</th>
-                <th>Description</th>
-                <th>Date</th>
-                <th>Amount</th>            
-                <th>Currency</th>            
-                <th>Paid by</th>            
-                <th>All equal</th>            
-                <th>Type of split</th>
+                <td>{{ expense['ID'] }}</td>
+                <td {% if expense['ID'] | string in errors['descr']['error_list'] %} class= "table-danger"{% endif %} >{{ expense['Description'] }}</td>
+                <td>{{ expense['Date'].date()}}</td>
+                <td>{{ "%0.2f" | format(expense['Amount'] | float) }}</td>
+                <td>{{ expense['Currency'] }}</td>
+                <td {% if expense['ID'] | string in errors['payer_name_error']['error_list'] %} class= "table-danger"{% endif %} >{{ expense['Paid by'] }}</td>
+                <td>{{ expense['All equal'] | upper }}</td>
+                <td {% if expense['ID'] | string in errors['split_type_unsupported']['error_list'] %} class= "table-danger"{% endif %}>{{ expense["Split type"] }}</td>
                 {% for member in members_in_cols %}
-                    <th>{{ member.name }} [{{member.id}}]</th>
-                {% endfor %}
-                <th>Total shares</th>
-                <!-- <th class="text-center">Actions</th> -->
-            </tr>
-        </thead>
-                {% for expense in expenses %}
-                <tr>
-                    <td>{{ expense['ID'] }}</td>
-                    <td {% if expense['ID'] | string in errors['descr']['error_list'] %} class= "text-danger"{% endif %} >{{ expense['Description'] }}</td>
-                    <td>{{ expense['Date'].date()}}</td>
-                    <td>{{ "%0.2f" | format(expense['Amount'] | float) }}</td>
-                    <td>{{ expense['Currency'] }}</td>
-                    <td {% if expense['ID'] | string in errors['payer_name_error']['error_list'] %} class= "text-danger"{% endif %} >{{ expense['Paid by'] }}</td>
-                    <td>{{ expense['All equal'] | upper }}</td>
-                    <td {% if expense['ID'] | string in errors['split_type_unsupported']['error_list'] %} class= "text-danger"{% endif %}>{{ expense["Split type"] }}</td>
-                    {% for member in members_in_cols %}
-                        {% set col_name = member['name'] %}
-                        {% set share_owed = member['name'] + "_share_owed" %}
+                    {% set col_name = member['name'] %}
+                    {% set share_owed = member['name'] + "_share_owed" %}
 
-                        <td>{{ "%0.2f" | format(expense[col_name] | float) }} <br>
-                            ({{ "%0.2f" | format(expense[share_owed] | float) }})</td>
-                    {% endfor %}
-                    <td {% if expense['ID'] | string in errors['shares_no_addup']['error_list'] %} class= "text-danger"{% endif %}>{{expense['Total Shares']}}</td>
-                </tr> 
+                    <td>{{ "%0.2f" | format(expense[col_name] | float) }} <br>
+                        {% if expense[share_owed] is not none %}
+                            ({{ "%0.2f" | format(expense[share_owed] | float) }})
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
                 {% endfor %}
-        </table>
-    </div>
+                <td {% if expense['ID'] | string in errors['shares_no_addup']['error_list'] %} class= "table-danger"{% endif %}>{{expense['Total Shares']}}</td>
+            </tr> 
+            {% endfor %}
+    </table>
 </div>
+
 {% if file_valid == True %}
     <form action="/push_expenses/{{ upload_id }}" method="post" >
         <button class="btn btn-primary" type="submit">Upload</button>
