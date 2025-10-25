@@ -75,7 +75,12 @@ def batch_upload_process(request: Request, db: Session = Depends(database.get_db
         if member_info['name'] in members_in_expenses_names:
             members_in_expenses[id] = member_info
 
-    expenses_df['Total Shares'] = expenses_df[members_in_expenses_names].sum(axis = 1) # Create col to add shares from all members
+    # Round the 'Amount' column and member data columns to 2 decimals
+    expenses_df['Amount'] = expenses_df['Amount'].round(2)
+    expenses_df[members_in_expenses_names] = expenses_df[members_in_expenses_names].round(2)
+
+    # Calculate columns
+    expenses_df['Total Shares'] = expenses_df[members_in_expenses_names].sum(axis=1)  # Create col to add shares from all members
     expenses_df['All equal'] = expenses_df['All equal'].astype(str).apply(str.lower).replace(['y','n',''], [True, False, False]) # Read the 'All equal' columns
 
     # members_in_expenses = []
@@ -105,18 +110,19 @@ def batch_upload_process(request: Request, db: Session = Depends(database.get_db
         """ Calculate share owed for a given expense (row) and user (member name), taking into account split type"""
         member_cell_value = row[member_name]
         if pd.isna(member_cell_value):
-            return 0
+            result = 0
         elif row['All equal']:
-            return round(row['Amount'] / len(group.members), 2) # Divide equally by the number of members in group
+            result = round(row['Amount'] / len(group.members), 2) # Divide equally by the number of members in group
         elif row["Split type"] == "share":
-            return round(member_cell_value / 100 * row['Amount'], 2) # Divide based on %
+            result = round(member_cell_value / 100 * row['Amount'], 2) # Divide based on %
         elif row["Split type"] == "amount":
-            return member_cell_value # Assign the amount specified
+            result = member_cell_value # Assign the amount specified
         elif row["Split type"] == "equal":
             members_for_division = [member['name'] for member in members_in_expenses.values() if not pd.isna(row[f"{member['name']}"])]
-            return round(row['Amount'] / len(members_for_division), 2)
+            result = round(row['Amount'] / len(members_for_division), 2)
         else:
-            return 0 # An error will be raise to the user
+            result = 0 # An error will be raised to the user
+        return result
         
     for col_name in members_in_expenses_names:
         # Share paid
@@ -144,13 +150,13 @@ def batch_upload_process(request: Request, db: Session = Depends(database.get_db
     # Obtain error message
     errors, error_messages, error_count = describe_errors(expenses_df, members_df, group, members_in_expenses_names)
 
-    # Store data temporarily so it can be pushed later
-    expenses = expenses_df.to_dict('records')
-    if error_count == 0:
+    # Convert to dict that will be passed to jinja
+    expenses = expenses_df.replace({np.nan: None}).to_dict(orient="records")
 
-        # Create upload and expenses in database
+
+    # Create upload and expenses in database
+    if error_count == 0:
         new_upload = crud.create_upload(db, creator_user_id = current_user.id, group_id = group.id)
-             
         for exp in expenses:
             crud.create_expense(db, upload_id = new_upload.id, expense = exp, group_members = members_in_expenses, creator_user_id = current_user.id)
     
@@ -187,7 +193,7 @@ def push_expenses(request: Request, upload_id: int, db: Session = Depends(databa
         expense.setCreationMethod('Splitwise tools')
         expense.setDate(e.date)
         expense.setCurrencyCode(e.currency)
-        # If we split all equal, no need to add members
+        # If payer is the logged in user, simply use setSplitEqually
         if e.all_equal == True and e.payer_id == sObj.getCurrentUser().getId(): 
             expense.setSplitEqually()
         # O/w, add each member of the expense
