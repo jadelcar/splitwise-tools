@@ -46,6 +46,11 @@ Upload expenses
 ![](https://github.com/jadelcar/splitwise-tools/blob/master/Splitwise-tools-demo-upload-expenses.gif)
 
 
+## Quick start
+
+```
+  uvicorn main:app
+```
 ## Future improvements:
   * Allow user to select members present in the excel template to download
   * Dashboard to visualize expenditures in a group and debts between members
