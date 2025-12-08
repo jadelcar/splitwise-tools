@@ -49,7 +49,8 @@ Upload expenses
 ## Quick start
 
 ```
-  uvicorn main:app
+  cd splitwise-tools
+  python start_app_wlan.py
 ```
 ## Future improvements:
   * Allow user to select members present in the excel template to download
