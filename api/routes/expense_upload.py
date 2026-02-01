@@ -29,7 +29,7 @@ URL = f"http://{settings.APP_HOST}:{settings.APP_PORT}"
 
 """       ----------           Retrieve data       -----------            """
 
-@router.get('/batch_upload', response_class = HTMLResponse)
+@router.get("/batch_upload", name = "batch_upload", response_class = HTMLResponse)
 def batch_upload_show_form(request: Request):
     """
     Show form for uploading an excel file
@@ -39,7 +39,7 @@ def batch_upload_show_form(request: Request):
     return templates.TemplateResponse("batch_upload.html", {"request": request, "groups" : groups})
 
 
-@router.post("/batch_upload_process", response_class = HTMLResponse)
+@router.post("/batch_upload_process", name = "batch_upload_process", response_class = HTMLResponse)
 def batch_upload_process(request: Request, db: Session = Depends(database.get_db),group_for_upload = Form(), batch_expenses_file : UploadFile = File(...)):
     """
     Process the data uploaded
@@ -174,7 +174,7 @@ def batch_upload_process(request: Request, db: Session = Depends(database.get_db
 
     return templates.TemplateResponse("upload_edit.html", context)
 
-@router.post('/push_expenses/{upload_id}', response_class = HTMLResponse)
+@router.post('/push_expenses/{upload_id}', name = "push_expenses", response_class = HTMLResponse)
 def push_expenses(request: Request, upload_id: int, db: Session = Depends(database.get_db)):
 
     sObj = auth.get_access_token(request)

@@ -6,12 +6,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.requests import Request
 from fastapi.testclient import TestClient
 
+import logging
+from fastapi.logger import logger
 
 from sqlalchemy.orm import Session
 
 import starlette.status as status
 from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
+# from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
+
 
 from splitwise import Splitwise
 from splitwise.expense import Expense
@@ -36,11 +40,19 @@ from services.helpers.expense_utils import *
 # from db.database import engine, SessionLocal, database.get_db
 from db import crud, models, schemas, database
 
+settings = get_settings()
+
 # Set up FastAPI
-middleware = [
-    Middleware(SessionMiddleware, secret_key='super-secret')
-]
-app = FastAPI(middleware=middleware)
+app = FastAPI(root_path=settings.ROOT_PATH, title="Splitwise Tools", version="1.0.0")
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key='super-secret',
+    same_site="lax",      # IMPORTANT
+    https_only=False,     # True only if HTTPS
+)
+
+# app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 # Include routers
 app.include_router(auth.router)
@@ -49,11 +61,11 @@ app.include_router(expense_upload.router)
 # Configure templating
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-settings = get_settings()
-URL = f"http://{settings.APP_HOST}:{settings.APP_PORT}"
 CONSUMER_KEY = settings.CONSUMER_KEY
 CONSUMER_SECRET = settings.CONSUMER_SECRET
 
+logging.basicConfig(level=logging.DEBUG)
+logger.setLevel(logging.DEBUG)
 
 # Configure database
 models.Base.metadata.create_all(bind = database.engine) # Creates DB if not yet created
@@ -68,7 +80,7 @@ def home(request: Request):
 
 
 """       ----------           Create data       -----------            """
-@app.get("/create_upload", response_class=HTMLResponse)
+@app.get("/create_upload", name = "create_upload", response_class=HTMLResponse)
 def create_upload(request: Request, db: Session = Depends(database.get_db)):
     """Create a new upload"""
     try:
@@ -79,7 +91,7 @@ def create_upload(request: Request, db: Session = Depends(database.get_db)):
     new_upload = crud.create_upload(db, creator_user_id = current_user)
     return templates.TemplateResponse("home.html", {"request": request, "new_upload" : new_upload})
 
-@app.post("/create_expense", response_class=HTMLResponse)
+@app.post("/create_expense", name = "create_expense", response_class=HTMLResponse)
 def create_expense(request: Request, db: Session = Depends(database.get_db)):
     """Create a new expense"""
     try:
@@ -101,14 +113,14 @@ def get_uploads_by_id(request: Request, db: Session = Depends(database.get_db)):
     uploads = crud.get_uploads(db)
     return templates.TemplateResponse("uploads.html", {"request": request, "uploads" : uploads})
 
-@app.get("/groups", response_class=HTMLResponse)
+@app.get("/groups", name = "groups", response_class=HTMLResponse)
 def get_groups_by_id(request: Request):
     """Get groups of the current user logged in the app, using it's app user ID"""
     sObj = auth.get_access_token(request)
     groups = sObj.getGroups()
     return templates.TemplateResponse("groups.html", {"request": request, "groups" : groups})
 
-@app.get("/template/{group_id}")
+@app.get("/group_template/{group_id}", name = "download_group_template")
 def get_template_by_group_id(request: Request, group_id: int):
     """Create a template excel for a group"""
     sObj = auth.get_access_token(request)
@@ -174,12 +186,12 @@ def get_template_by_group_id(request: Request, group_id: int):
 
 """       ----------           User registration       -----------            """
 
-@app.get("/register/", response_class = HTMLResponse)
+@app.get("/register", name = "register", response_class = HTMLResponse)
 def register_show_form(request: Request):
     """ Show user a page for registering"""
     return templates.TemplateResponse("register.html", {"request": request})
 
-@app.post("/register_submit/")
+@app.post("/register_submit", name = "register_submit")
 def register(request: Request, username: str = Form(), password: str = Form(), confirmation: str = Form(), db: Session = Depends(database.get_db)):
     """ Register user using data in their registration form"""
     
@@ -213,14 +225,14 @@ def register(request: Request, username: str = Form(), password: str = Form(), c
     # Redirect to home
     return RedirectResponse('/', status_code=status.HTTP_302_FOUND) # See https://stackoverflow.com/a/65512571/19667698
 
-@app.get("user/{username}")
+@app.get("user/{username}", name = "get_user_byusername")
 def get_user_byusername(username: int, db: Session = Depends(database.get_db)):
     """Get user by its username"""
     user = crud.get_user_by_username(db, username = username).first()
     return user
 
 """ Create users and groups in database"""
-@app.post("/users/", response_model=schemas.User)
+@app.post("/users/", name = "create_user", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
     """Create a new user in database"""
     db_user = crud.get_user_by_email(db, email=user.email)

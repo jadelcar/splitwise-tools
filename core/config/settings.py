@@ -5,17 +5,20 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     ENV: str = "development"
-    APP_HOST: str = "127.0.0.1"
+    APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
-    
+    ROOT_PATH: str = "/splitwisetools"
+
     CONSUMER_KEY: str
     CONSUMER_SECRET: str
+
 
     @property
     def BASE_URL(self) -> str:
         if self.ENV == "production":
             return "https://splitwise-tools.onrender.com"
-        return f"http://{self.APP_HOST}:{self.APP_PORT}"
+        elif self.ENV == "development":
+            return f"http://{self.APP_HOST}:{self.APP_PORT}{self.ROOT_PATH}"
     
     @property
     def OAUTH_REDIRECT_URI(self) -> str:
