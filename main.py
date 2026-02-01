@@ -93,8 +93,8 @@ def create_expense(request: Request, db: Session = Depends(database.get_db)):
 
 """       ----------           Retrieve data       -----------            """
 
-@app.get("/uploads", response_class=HTMLResponse)
-def get_groups_by_id(request: Request, db: Session = Depends(database.get_db)):
+@app.get("/uploads", name = "uploads", response_class=HTMLResponse)
+def get_uploads_by_id(request: Request, db: Session = Depends(database.get_db)):
     """Get uploads of the current user logged in the app, using it's user ID"""
     sObj = auth.get_access_token(request)
     sObj.getCurrentUser().id
