@@ -33,16 +33,16 @@
                 <div class="collapse navbar-collapse" id="navbar">
                     {% if request.session["access_token"] %}
                         <ul class="navbar-nav me-auto mt-2">
-                            <li class="nav-item"><a class="nav-link" href="/groups">Groups</a></li>
-                            <li class="nav-item"><a class="nav-link" href="/batch_upload">Batch upload</a></li>
+                            <li class="nav-item"><a class="nav-link" href="{{ url_for('groups') }}">Groups</a></li>
+                            <li class="nav-item"><a class="nav-link" href="{{ url_for('batch_upload') }}">Batch upload</a></li>
                         </ul>
                         <ul class="navbar-nav ms-auto mt-2">
-                            <li class="nav-item"><a class="nav-link" href="/logout">Log Out</a></li>
+                            <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}">Log Out</a></li>
                             <li class="nav-item"><a class="nav-link">User: {{ request.session["user_fname"] }} </a></li>
                         </ul>
                     {% else %}
                         <ul class="navbar-nav ms-auto mt-2">
-                            <li class="nav-item"><a class="nav-link" href="/login_sw">Connect to Splitwise</a></li>
+                            <li class="nav-item"><a class="nav-link" href="{{ url_for('login_sw') }}">Connect to Splitwise</a></li>
                         </ul>
                     {% endif %}
                 </div>

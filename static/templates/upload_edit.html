@@ -74,7 +74,7 @@
 </div>
 
 {% if file_valid == True %}
-    <form action="/push_expenses/{{ upload_id }}" method="post" >
+    <form action="{{ url_for('batch_upload_process', upload_id=upload_id) }}" method="post" >
         <button class="btn btn-primary" type="submit">Upload</button>
     </form>
 {% else %}

@@ -5,7 +5,7 @@
 {% endblock %}
 
 {% block body %}
-    <form action="/login_sw" method="post">
+    <form action="{{ url_for('login_sw') }}" method="post">
         <button class="btn btn-primary" type="submit">Authorize Splitwise</button>
     </form>
 {% endblock %}

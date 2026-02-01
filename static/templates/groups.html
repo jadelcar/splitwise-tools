@@ -24,7 +24,7 @@
             <tr>
             <td>{{ group.getId() }}</td>
             <td>{{ group.getName() }}</td>
-            <td class="text-center"><a class='btn btn-info btn-xs' href="/template/{{ group.getId()}}"><span class="glyphicon glyphicon-download"></span> Download template</a>
+            <td class="text-center"><a class='btn btn-info btn-xs' href="{{ url_for('download_group_template', group_id=group.getId()) }}"><span class="glyphicon glyphicon-download"></span> Download template</a>
             </tr>
 
             {% endfor %}
