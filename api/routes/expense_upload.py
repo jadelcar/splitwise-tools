@@ -25,7 +25,6 @@ router = APIRouter(
 )
 
 settings = get_settings()
-URL = f"http://{settings.APP_HOST}:{settings.APP_PORT}"
 
 """       ----------           Retrieve data       -----------            """
 
