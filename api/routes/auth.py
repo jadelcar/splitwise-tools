@@ -1,6 +1,6 @@
 from splitwise import Splitwise
 from starlette.requests import Request
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
 from core.config.settings import Settings, get_settings
 from core.exceptions import handlers
@@ -22,14 +22,20 @@ def get_access_token(request: Request):
     """ Obtain Splitwise object (only if there is an access token """
     try:
         sObj = Splitwise(settings.CONSUMER_KEY, settings.CONSUMER_SECRET)
-    except:
-        raise Exception("Could not obtain the Splitwise object, consumer key/secret has expired")
-    
+    except Exception as e:
+        logger.error(f"Splitwise init failed: {e}")
+        raise HTTPException(status_code=303, headers={"Location": "/login_sw"})
+
+    token = request.session.get('access_token')
+    if not token:
+        raise HTTPException(status_code=303, headers={"Location": "/login_sw"})
+
     try:
-        sObj.setOAuth2AccessToken(request.session.get('access_token'))
+        sObj.setOAuth2AccessToken(token)
         return sObj
-    except:
-        raise Exception("Could not set access token. Maybe the user has not authorized Splitwise or the session has expired")
+    except Exception as e:
+        logger.error(f"Failed to set access token: {e}")
+        raise HTTPException(status_code=303, headers={"Location": "/login_sw"})
 
 @router.get("/login_sw", name = "login_sw")
 def login_sw(request: Request):
@@ -57,15 +63,26 @@ def authorize(request: Request, code: str, state: str):
     # Get parameters needed to obtain the access token
     sObj = Splitwise(settings.CONSUMER_KEY, settings.CONSUMER_SECRET)
     
-    # Check that state is the same
-    # state_previous = request.session.get('state')
-    # if state_previous != state:
-    #     raise Exception(f"State is not the same. Previous state: {state_previous}, current state: {state}")
+    state_previous = request.session.get('state')
+    if state_previous != state:
+        logger.warning(f"OAuth state mismatch — session: {state_previous!r}, incoming: {state!r}")
 
     try:
         access_token = sObj.getOAuth2AccessToken(code, settings.BASE_URL + "/authorize") # Must be the same URL configured in Splitwise website for redirection! (https://secure.splitwise.com/apps/3979)
-    except:
-        raise Exception(f"Could not obtain access token from Splitwise. code = {code}, URL = {settings.BASE_URL}/authorize. The authorization code may be invalid or expired.")
+    except Exception as e:
+        logger.error(f"Token exchange failed: {e}")
+        return templates.TemplateResponse("authorize.html", {
+            "request": request,
+            "error": "Could not complete authorization. Please try again."
+        })
+
+    if not access_token:
+        logger.error("getOAuth2AccessToken returned None (Splitwise responded with 'false')")
+        return templates.TemplateResponse("authorize.html", {
+            "request": request,
+            "error": "Splitwise denied the authorization. Please try again."
+        })
+
     sObj.setOAuth2AccessToken(access_token)
     
     # Store user data and tokens in session

@@ -47,7 +47,7 @@ app = FastAPI(root_path=settings.ROOT_PATH, title="Splitwise Tools", version="1.
 
 app.add_middleware(
     SessionMiddleware,
-    secret_key='super-secret',
+    secret_key=settings.SECRET_KEY,
     same_site="lax",      # IMPORTANT
     https_only=False,     # True only if HTTPS
 )
@@ -83,22 +83,16 @@ def home(request: Request):
 @app.get("/create_upload", name = "create_upload", response_class=HTMLResponse)
 def create_upload(request: Request, db: Session = Depends(database.get_db)):
     """Create a new upload"""
-    try:
-        sObj = auth.get_access_token(request)
-        current_user = sObj.getCurrentUser().getId()
-    except:
-        current_user = 7357
+    sObj = auth.get_access_token(request)
+    current_user = sObj.getCurrentUser().getId()
     new_upload = crud.create_upload(db, creator_user_id = current_user)
     return templates.TemplateResponse("home.html", {"request": request, "new_upload" : new_upload})
 
 @app.post("/create_expense", name = "create_expense", response_class=HTMLResponse)
 def create_expense(request: Request, db: Session = Depends(database.get_db)):
     """Create a new expense"""
-    try:
-        sObj = auth.get_access_token(request)
-        current_user = sObj.getCurrentUser().getId()
-    except:
-        current_user = 7357
+    sObj = auth.get_access_token(request)
+    current_user = sObj.getCurrentUser().getId()
     crud.create_expense(db, creator_user_id = current_user)
     return templates.TemplateResponse("home.html", {"request": request})
 
