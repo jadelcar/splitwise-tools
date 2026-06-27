@@ -23,6 +23,28 @@ def group_to_dict(group: Group):
         "members" : [(member.id, member.first_name, member.last_name) for member in group.members]
     }
 
+def assign_rounding_diff(row: pd.Series, members_in_expenses_names: list, current_user_name: str = None) -> pd.Series:
+    """Assign any cent-level rounding remainder to the uploader (or a random participant as fallback).
+
+    When individual shares are rounded to 2 decimal places they may not sum exactly to the
+    expense total.  The maximum possible discrepancy is n×$0.005 where n is the number of
+    participants, so the dynamic threshold handles groups of any size.
+    """
+    import random
+    share_owed_columns = [
+        f"{col}_share_owed" for col in members_in_expenses_names if row[f"{col}_share_owed"] > 0
+    ]
+    if not share_owed_columns:
+        return row
+    diff = round(row[share_owed_columns].sum() - row['Amount'], 2)
+    max_rounding_error = len(share_owed_columns) * 0.005 + 1e-9
+    if abs(diff) > 0 and abs(diff) <= max_rounding_error:
+        uploader_col = f"{current_user_name}_share_owed" if current_user_name else None
+        target = uploader_col if (uploader_col and uploader_col in share_owed_columns) else random.choice(share_owed_columns)
+        row[target] = round(row[target] - diff, 2)
+    return row
+
+
 def describe_errors(expenses_df: pd.DataFrame, members_df: pd.DataFrame, group: Group, members_in_expenses_names : list = None) -> Tuple[dict,  list, int]:
     """ Describe all errors in the excel file. Returns
 
