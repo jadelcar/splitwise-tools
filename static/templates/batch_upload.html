@@ -7,6 +7,14 @@
 {% block body %}
     Select the group where you want to upload expenses.
 
+    <style>
+        .wide-tooltip .tooltip-inner {
+            max-width: 400px;
+            white-space: normal;
+            text-align: left;
+        }
+    </style>
+
     <form action="{{ url_for('batch_upload_process') }}" method="post" enctype="multipart/form-data">
         <div class="mb-3">
             <select name="group_for_upload" class="custom-select form-control mx-auto w-auto" autocomplete="off" autofocus >
@@ -17,6 +25,34 @@
               </select>
         </div>
         <input type="file" name="batch_expenses_file" accept=".xls,.xlsx,.csv"></input>
+
+        <div class="mb-3 mt-3">
+            <div class="mb-1">
+                Rounding assignment method
+                <span tabindex="0" data-bs-toggle="tooltip" data-bs-placement="right" data-bs-custom-class="wide-tooltip" data-bs-html="true"
+                      title="
+                        <p>
+                            Choose who gets assigned the extra cents that remain when the expenses cannot be exactly divided among members.
+                        </p>
+                        <p>
+                            For example, if the expense is 10.01€ and there are 2 members, then one will be assigned 5.00 and the other 5.01. This setting determines who gets that extra cent, either you (the uploader) or a random member of the group.
+                        </p>">
+                    <i class="bi bi-info-circle"></i>
+                </span>
+            </div>
+            <div class="d-inline-flex align-items-center gap-2">
+                <span class="small">You</span>
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input switch-neutral" type="checkbox" role="switch" id="roundingSwitch" name="rounding_assignment" value="random">
+                </div>
+                <label class="small" for="roundingSwitch">Random</label>
+            </div>
+        </div>
+
+        <script>
+            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+        </script>
+
         <button class="btn btn-primary" type="submit">Upload file</button>
     </form>
 {% endblock %}

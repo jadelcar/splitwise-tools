@@ -39,7 +39,7 @@ def batch_upload_show_form(request: Request):
 
 
 @router.post("/batch_upload_process", name = "batch_upload_process", response_class = HTMLResponse)
-def batch_upload_process(request: Request, db: Session = Depends(database.get_db),group_for_upload = Form(), batch_expenses_file : UploadFile = File(...)):
+def batch_upload_process(request: Request, db: Session = Depends(database.get_db), group_for_upload = Form(), batch_expenses_file: UploadFile = File(...), rounding_assignment: str = Form("uploader")):
     """
     Process the data uploaded
     """
@@ -137,6 +137,7 @@ def batch_upload_process(request: Request, db: Session = Depends(database.get_db
         axis=1,
         members_in_expenses_names=members_in_expenses_names,
         current_user_name=current_user_name,
+        rounding_assignment=rounding_assignment,
     )
 
     # Obtain error message
