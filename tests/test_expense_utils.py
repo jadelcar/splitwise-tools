@@ -119,6 +119,35 @@ class TestAssignRoundingDiff:
         assert round(total, 2) == 0.25
 
     # ------------------------------------------------------------------
+    # rounding_assignment="random" — uploader must NOT receive it
+    # ------------------------------------------------------------------
+
+    def test_random_mode_does_not_target_uploader(self):
+        """With rounding_assignment='random', the uploader should not be specifically targeted.
+        Run many times to confirm Alice (uploader) is not always the one adjusted."""
+        row_template = {"Amount": 0.25, "Alice_share_owed": 0.13, "Bob_share_owed": 0.13}
+        adjusted_members = {"Alice": 0, "Bob": 0}
+        trials = 200
+        for _ in range(trials):
+            row = pd.Series(dict(row_template))
+            result = assign_rounding_diff(row, MEMBERS, current_user_name="Alice", rounding_assignment="random")
+            if result["Alice_share_owed"] == 0.12:
+                adjusted_members["Alice"] += 1
+            if result["Bob_share_owed"] == 0.12:
+                adjusted_members["Bob"] += 1
+        # Both should receive the adjustment at least once across 200 trials
+        assert adjusted_members["Alice"] > 0
+        assert adjusted_members["Bob"] > 0
+
+    def test_uploader_mode_always_targets_uploader(self):
+        """With rounding_assignment='uploader' (default), Alice always absorbs the diff."""
+        for _ in range(20):
+            row = pd.Series({"Amount": 0.25, "Alice_share_owed": 0.13, "Bob_share_owed": 0.13})
+            result = assign_rounding_diff(row, MEMBERS, current_user_name="Alice", rounding_assignment="uploader")
+            assert result["Alice_share_owed"] == 0.12
+            assert result["Bob_share_owed"] == 0.13
+
+    # ------------------------------------------------------------------
     # Diff too large — not a rounding artefact, must not be touched
     # ------------------------------------------------------------------
 

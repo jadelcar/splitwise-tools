@@ -23,11 +23,21 @@ def group_to_dict(group: Group):
         "members" : [(member.id, member.first_name, member.last_name) for member in group.members]
     }
 
-def assign_rounding_diff(row: pd.Series, members_in_expenses_names: list, current_user_name: str = None) -> pd.Series:
-    """Assign any cent-level rounding remainder to the uploader (or a random participant as fallback).
+def assign_rounding_diff(
+    row: pd.Series,
+    members_in_expenses_names: list,
+    current_user_name: str = None,
+    rounding_assignment: str = "uploader",
+) -> pd.Series:
+    """Assign any cent-level rounding remainder to the chosen member.
+
+    rounding_assignment:
+      "uploader" — give the extra cents to the uploader (falls back to random if uploader
+                   has no share in this expense).
+      "random"   — pick a random participant.
 
     When individual shares are rounded to 2 decimal places they may not sum exactly to the
-    expense total.  The maximum possible discrepancy is n×$0.005 where n is the number of
+    expense total. The maximum possible discrepancy is n×$0.005 where n is the number of
     participants, so the dynamic threshold handles groups of any size.
     """
     import random
@@ -40,7 +50,10 @@ def assign_rounding_diff(row: pd.Series, members_in_expenses_names: list, curren
     max_rounding_error = len(share_owed_columns) * 0.005 + 1e-9
     if abs(diff) > 0 and abs(diff) <= max_rounding_error:
         uploader_col = f"{current_user_name}_share_owed" if current_user_name else None
-        target = uploader_col if (uploader_col and uploader_col in share_owed_columns) else random.choice(share_owed_columns)
+        if rounding_assignment == "uploader" and uploader_col and uploader_col in share_owed_columns:
+            target = uploader_col
+        else:
+            target = random.choice(share_owed_columns)
         row[target] = round(row[target] - diff, 2)
     return row
 
