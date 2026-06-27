@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     CONSUMER_KEY: str
     CONSUMER_SECRET: str
-    SECRET_KEY: str = "super-secret"
+    SECRET_KEY: str  # required — must be set in .env, no default
 
 
     @property

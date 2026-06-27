@@ -2,7 +2,7 @@ from splitwise.expense import Expense
 from splitwise.user import ExpenseUser
 
 from starlette.requests import Request
-from fastapi import APIRouter, Depends, Request, Form, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse
 from core.config.settings import get_settings
 from core.exceptions import handlers
@@ -177,8 +177,11 @@ def batch_upload_process(request: Request, db: Session = Depends(database.get_db
 def push_expenses(request: Request, upload_id: int, db: Session = Depends(database.get_db)):
 
     sObj = auth.get_access_token(request)
-        
+
     upload = crud.get_upload_by_id(db, upload_id = upload_id)
+    if upload is None or upload.creator_id != sObj.getCurrentUser().getId():
+        raise HTTPException(status_code=403, detail="Forbidden")
+
     expenses = crud.get_expenses_by_upload_id(db, upload_id = upload_id)
     group = crud.get_group_by_id(db, group_db_id = upload.group_id) # DB ID, not SW ID
 

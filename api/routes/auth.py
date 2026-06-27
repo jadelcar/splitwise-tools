@@ -66,6 +66,7 @@ def authorize(request: Request, code: str, state: str):
     state_previous = request.session.get('state')
     if state_previous != state:
         logger.warning(f"OAuth state mismatch — session: {state_previous!r}, incoming: {state!r}")
+        raise HTTPException(status_code=400, detail="OAuth state mismatch")
 
     try:
         access_token = sObj.getOAuth2AccessToken(code, settings.BASE_URL + "/authorize") # Must be the same URL configured in Splitwise website for redirection! (https://secure.splitwise.com/apps/3979)
