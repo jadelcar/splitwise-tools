@@ -9,7 +9,7 @@ from core.exceptions import handlers
 from core.templates import templates
 from api.routes import auth
 from db import crud, models, schemas, database
-from services.helpers.expense_utils import describe_errors, group_to_dict
+from services.helpers.expense_utils import assign_rounding_diff, describe_errors, group_to_dict
 import json
 
 from sqlalchemy.orm import Session
@@ -46,7 +46,8 @@ def batch_upload_process(request: Request, db: Session = Depends(database.get_db
     # Access tokens
     sObj = auth.get_access_token(request)
     current_user = sObj.getCurrentUser()
-    
+    current_user_id = str(current_user.id)
+
     group = sObj.getGroup(group_for_upload) # Fetch group info
     request.session.pop('upload_id', None) # Erase from session any previous upload
     file = batch_expenses_file.file.read() # Import and parse user file 
@@ -130,21 +131,13 @@ def batch_upload_process(request: Request, db: Session = Depends(database.get_db
         # Share owed
         expenses_df[f'{col_name}_share_owed'] = expenses_df.apply(getShareOwed, axis = 1, member_name = f"{col_name}")
 
-    # Round share owed if it doesn't add up
-    def AssignRoundingDiff(row):
-        """Assign the rounding difference to a random member within the expense
-        Add up share_owed of all members and compare with total amount: If the difference is due to rounding (<0.02), subtract this from a random user within the expense
-        """
-        share_owed_columns = [f"{col_name}_share_owed" for col_name in members_in_expenses_names if row[f"{col_name}_share_owed"] > 0] # List of columns to parse in this expense
-        sum_share_owed = row[share_owed_columns].sum()
-        diff = sum_share_owed - row['Amount']
-        if abs(diff) > 0 and abs(diff) < 0.02:
-            diff_round = round(diff, 2)
-            random_member = random.choice(share_owed_columns)
-            row[random_member] += -diff_round # Subtract the difference
-        return row
-
-    expenses_df = expenses_df.apply(AssignRoundingDiff, axis = 1)
+    current_user_name = members_in_expenses.get(current_user_id, {}).get('name')
+    expenses_df = expenses_df.apply(
+        assign_rounding_diff,
+        axis=1,
+        members_in_expenses_names=members_in_expenses_names,
+        current_user_name=current_user_name,
+    )
 
     # Obtain error message
     errors, error_messages, error_count = describe_errors(expenses_df, members_df, group, members_in_expenses_names)
