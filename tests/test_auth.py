@@ -63,22 +63,24 @@ class TestGetAccessToken:
 class TestAuthorizeRoute:
     def test_token_exchange_exception_shows_error(self):
         """`getOAuth2AccessToken` raising an exception renders the error page."""
+        cookie = make_session_cookie({"state": "xyz"})
         with patch("api.routes.auth.Splitwise") as MockSW:
             MockSW.return_value.getOAuth2AccessToken.side_effect = Exception("network error")
-            response = client.get("/authorize", params={"code": "abc", "state": "xyz"})
+            response = client.get("/authorize", params={"code": "abc", "state": "xyz"}, cookies={"session": cookie})
         assert response.status_code == 200
         assert "Could not complete authorization" in response.text
 
     def test_none_token_shows_error(self):
         """`getOAuth2AccessToken` returning None renders the error page."""
+        cookie = make_session_cookie({"state": "xyz"})
         with patch("api.routes.auth.Splitwise") as MockSW:
             MockSW.return_value.getOAuth2AccessToken.return_value = None
-            response = client.get("/authorize", params={"code": "abc", "state": "xyz"})
+            response = client.get("/authorize", params={"code": "abc", "state": "xyz"}, cookies={"session": cookie})
         assert response.status_code == 200
         assert "Splitwise denied" in response.text
 
-    def test_state_mismatch_logs_warning_but_succeeds(self, caplog):
-        """State mismatch logs a WARNING but the auth flow completes."""
+    def test_state_mismatch_returns_400(self, caplog):
+        """State mismatch logs a WARNING and returns 400 — flow must not complete."""
         cookie = make_session_cookie({"state": "correct_state"})
         with patch("api.routes.auth.Splitwise") as MockSW:
             mock_obj = MagicMock()
@@ -91,17 +93,18 @@ class TestAuthorizeRoute:
                     params={"code": "abc", "state": "wrong_state"},
                     cookies={"session": cookie},
                 )
-        assert response.status_code == 200
+        assert response.status_code == 400
         assert any("state mismatch" in r.message.lower() for r in caplog.records)
 
     def test_successful_auth_renders_success_page(self):
         """Successful OAuth flow renders authorize_success.html."""
+        cookie = make_session_cookie({"state": "xyz"})
         with patch("api.routes.auth.Splitwise") as MockSW:
             mock_obj = MagicMock()
             MockSW.return_value = mock_obj
             mock_obj.getOAuth2AccessToken.return_value = FAKE_TOKEN
             mock_obj.getCurrentUser.return_value = MagicMock(id=42, first_name="Test")
-            response = client.get("/authorize", params={"code": "abc", "state": "xyz"})
+            response = client.get("/authorize", params={"code": "abc", "state": "xyz"}, cookies={"session": cookie})
         assert response.status_code == 200
         assert "authorize_success" in response.template.name
 

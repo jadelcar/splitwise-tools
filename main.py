@@ -103,8 +103,8 @@ def create_expense(request: Request, db: Session = Depends(database.get_db)):
 def get_uploads_by_id(request: Request, db: Session = Depends(database.get_db)):
     """Get uploads of the current user logged in the app, using it's user ID"""
     sObj = auth.get_access_token(request)
-    sObj.getCurrentUser().id
-    uploads = crud.get_uploads(db)
+    current_user_id = sObj.getCurrentUser().getId()
+    uploads = crud.get_uploads_by_sw_user_id(db, sw_user_id=current_user_id)
     return templates.TemplateResponse("uploads.html", {"request": request, "uploads" : uploads})
 
 @app.get("/groups", name = "groups", response_class=HTMLResponse)
